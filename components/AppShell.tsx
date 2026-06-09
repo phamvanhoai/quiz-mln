@@ -9,7 +9,8 @@ const nav = [
   { href: "/", label: "Dashboard" },
   { href: "/import", label: "Import" },
   { href: "/sets", label: "Bộ đề" },
-  { href: "/wrong", label: "Câu sai" }
+  { href: "/wrong", label: "Câu sai" },
+  { href: "/settings", label: "Cấu hình" }
 ];
 
 export function AppShell({ children, dark, onToggleDark }: { children: ReactNode; dark: boolean; onToggleDark: () => void }) {

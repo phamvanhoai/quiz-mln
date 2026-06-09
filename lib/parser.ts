@@ -91,9 +91,8 @@ export function parseQuizTextWithErrors(text: string): ParseResult {
         errors.push(`Gặp đáp án ${option[1].toUpperCase()} nhưng chưa có nội dung câu hỏi phía trước.`);
         continue;
       }
-      const target = current as CurrentQuestion;
       activeOption = option[1].toUpperCase() as OptionLabel;
-      target.options[activeOption] = option[2].trim();
+      current.options[activeOption] = option[2].trim();
       continue;
     }
 

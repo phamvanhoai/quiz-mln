@@ -31,6 +31,15 @@ export default function HomePage() {
                 Quản lý bộ đề
               </Link>
             </div>
+            <div className="mt-4 text-sm text-zinc-500">
+              {store.cloudEnabled
+                ? store.cloudError
+                  ? `Supabase lỗi: ${store.cloudError}`
+                  : store.cloudReady
+                    ? "Supabase sync đang bật."
+                    : "Đang kết nối Supabase..."
+                : "Đang lưu local trên trình duyệt này."}
+            </div>
           </div>
           <div className="grid content-start gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-black">
             <div className="text-sm font-semibold">Trạng thái học</div>
