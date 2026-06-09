@@ -33,20 +33,35 @@ export function AnswerButton({
   onClick?: () => void;
   disabled?: boolean;
 }) {
+  const stateClass =
+    state === "correct"
+      ? "border-emerald-600 bg-emerald-100 text-emerald-950 ring-2 ring-emerald-500 dark:border-emerald-400 dark:bg-emerald-950 dark:text-emerald-50 dark:ring-emerald-500"
+      : state === "wrong"
+        ? "border-red-600 bg-red-100 text-red-950 ring-2 ring-red-500 dark:border-red-400 dark:bg-red-950 dark:text-red-50 dark:ring-red-500"
+        : state === "selected"
+          ? "border-blue-600 bg-blue-100 text-blue-950 ring-2 ring-blue-500 dark:border-blue-400 dark:bg-blue-950 dark:text-blue-50 dark:ring-blue-500"
+          : "border-zinc-200 bg-white text-zinc-950 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100";
+  const badgeClass =
+    state === "correct"
+      ? "bg-emerald-600 text-white dark:bg-emerald-400 dark:text-emerald-950"
+      : state === "wrong"
+        ? "bg-red-600 text-white dark:bg-red-400 dark:text-red-950"
+        : state === "selected"
+          ? "bg-blue-600 text-white dark:bg-blue-400 dark:text-blue-950"
+          : "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100";
+
   return (
     <button
       className={cn(
-        "focus-ring flex w-full items-start gap-3 rounded-xl border border-zinc-200 bg-white p-4 text-left shadow-sm shadow-zinc-200/60 transition hover:-translate-y-0.5 hover:border-zinc-400 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-950 dark:shadow-none dark:hover:border-zinc-600",
-        state === "correct" && "border-emerald-500 bg-emerald-50 text-emerald-950 dark:bg-emerald-950 dark:text-emerald-50",
-        state === "wrong" && "border-red-500 bg-red-50 text-red-950 dark:bg-red-950 dark:text-red-50",
-        state === "selected" && "border-zinc-950 bg-zinc-100 dark:border-white dark:bg-zinc-900",
-        disabled && "cursor-default hover:border-zinc-200 dark:hover:border-zinc-800"
+        "focus-ring flex w-full items-start gap-3 rounded-xl border p-4 text-left shadow-sm shadow-zinc-200/60 transition hover:-translate-y-0.5 hover:shadow-md dark:shadow-none",
+        stateClass,
+        disabled && "cursor-default hover:translate-y-0"
       )}
       disabled={disabled}
       onClick={onClick}
       type="button"
     >
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-zinc-100 font-bold dark:bg-zinc-800">
+      <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg font-bold", badgeClass)}>
         {label}
       </span>
       <span className="pt-1">{text}</span>
