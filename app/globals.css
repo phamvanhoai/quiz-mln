@@ -11,7 +11,17 @@
 }
 
 body {
-  @apply bg-paper text-ink antialiased dark:bg-zinc-950 dark:text-zinc-100;
+  @apply bg-zinc-50 text-zinc-950 antialiased dark:bg-black dark:text-zinc-100;
+  background-image:
+    linear-gradient(to right, rgba(24, 24, 27, 0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(24, 24, 27, 0.045) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+.dark body {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.055) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.055) 1px, transparent 1px);
 }
 
 button,
@@ -23,4 +33,16 @@ select {
 
 .focus-ring {
   @apply focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600;
+}
+
+.panel {
+  @apply rounded-xl border border-zinc-200 bg-white/90 shadow-sm shadow-zinc-200/70 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/85 dark:shadow-none;
+}
+
+.btn-primary {
+  @apply focus-ring rounded-lg bg-zinc-950 px-4 py-2 font-medium text-white transition hover:bg-zinc-800 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200;
+}
+
+.btn-secondary {
+  @apply focus-ring rounded-lg border border-zinc-300 bg-white px-4 py-2 font-medium transition hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:hover:border-zinc-600 dark:hover:bg-zinc-900;
 }

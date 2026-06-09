@@ -31,7 +31,7 @@ export default function WrongPage() {
           Chưa có câu sai. <Link className="text-blue-600" href="/sets">Vào bộ đề để luyện tập</Link>.
         </div>
       ) : (
-        <section className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+        <section className="panel p-5">
           <div className="mb-4 flex justify-between gap-3">
             <div className="text-sm text-zinc-500">Câu {index + 1}/{wrong.length} trong {item.set.title}</div>
             <button className="focus-ring rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700" onClick={() => store.clearWrong(item.question.id)} type="button">

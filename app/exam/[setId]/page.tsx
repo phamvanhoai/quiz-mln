@@ -65,7 +65,7 @@ export default function ExamPage() {
       <PageTitle title={set?.title ? `Thi thử: ${set.title}` : "Thi thử"} description="Làm bài không báo đúng/sai ngay. Sau khi nộp sẽ có điểm, tỷ lệ và danh sách câu sai." />
       {!set ? <Link href="/sets" className="text-blue-600">Quay lại bộ đề</Link> : null}
       {set && !exam.length ? (
-        <section className="max-w-xl rounded-lg border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+        <section className="panel max-w-xl p-5">
           <label className="grid gap-2 text-sm font-medium">
             Số câu thi
             <input className="focus-ring rounded-md border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700" max={set.questions.length} min={1} onChange={(e) => setCount(Number(e.target.value))} type="number" value={Math.min(count, set.questions.length)} />
@@ -82,12 +82,12 @@ export default function ExamPage() {
               <input className="focus-ring rounded-md border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700" min={1} onChange={(e) => setMinutes(Number(e.target.value))} type="number" value={minutes} />
             </label>
           ) : null}
-          <button className="focus-ring mt-5 rounded-md bg-blue-600 px-4 py-2 font-medium text-white" onClick={start} type="button">Bắt đầu</button>
+          <button className="btn-primary mt-5" onClick={start} type="button">Bắt đầu</button>
         </section>
       ) : null}
       {current && !submitted ? (
         <section className="grid gap-5 lg:grid-cols-[1fr_260px]">
-          <div className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+          <div className="panel p-5">
             <div className="mb-4 flex items-center justify-between">
               <div className="text-sm text-zinc-500">Câu {index + 1}/{exam.length}</div>
               {timed ? <div className="rounded-md bg-zinc-100 px-3 py-1 font-mono dark:bg-zinc-800">{timeText}</div> : null}
@@ -109,7 +109,7 @@ export default function ExamPage() {
               <button className="focus-ring rounded-md bg-blue-600 px-4 py-2 font-medium text-white" onClick={() => (index === exam.length - 1 ? submit() : setIndex(index + 1))} type="button">{index === exam.length - 1 ? "Nộp bài" : "Câu sau"}</button>
             </div>
           </div>
-          <aside className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+          <aside className="panel p-4">
             <div className="mb-3 font-semibold">Điều hướng</div>
             <div className="grid grid-cols-5 gap-2">
               {exam.map((question, qIndex) => (
@@ -123,7 +123,7 @@ export default function ExamPage() {
         </section>
       ) : null}
       {submitted && exam.length ? (
-        <section className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+        <section className="panel p-5">
           <h2 className="text-xl font-bold">Kết quả</h2>
           <div className="mt-4 grid gap-4 sm:grid-cols-3">
             <Result label="Điểm" value={`${correct}/${exam.length}`} />

@@ -36,17 +36,17 @@ export function AnswerButton({
   return (
     <button
       className={cn(
-        "focus-ring flex w-full items-start gap-3 rounded-lg border bg-white p-4 text-left shadow-sm transition hover:border-blue-400 dark:bg-zinc-950",
+        "focus-ring flex w-full items-start gap-3 rounded-xl border border-zinc-200 bg-white p-4 text-left shadow-sm shadow-zinc-200/60 transition hover:-translate-y-0.5 hover:border-zinc-400 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-950 dark:shadow-none dark:hover:border-zinc-600",
         state === "correct" && "border-emerald-500 bg-emerald-50 text-emerald-950 dark:bg-emerald-950 dark:text-emerald-50",
         state === "wrong" && "border-red-500 bg-red-50 text-red-950 dark:bg-red-950 dark:text-red-50",
-        state === "selected" && "border-blue-500 bg-blue-50 dark:bg-blue-950",
+        state === "selected" && "border-zinc-950 bg-zinc-100 dark:border-white dark:bg-zinc-900",
         disabled && "cursor-default hover:border-zinc-200 dark:hover:border-zinc-800"
       )}
       disabled={disabled}
       onClick={onClick}
       type="button"
     >
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-zinc-100 font-bold dark:bg-zinc-800">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-zinc-100 font-bold dark:bg-zinc-800">
         {label}
       </span>
       <span className="pt-1">{text}</span>

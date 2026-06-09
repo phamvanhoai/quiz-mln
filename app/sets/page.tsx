@@ -19,8 +19,8 @@ export default function SetsPage() {
     <AppShell dark={store.dark} onToggleDark={store.toggleDark}>
       <PageTitle title="Quản lý bộ đề" description="Đổi tên, xóa bộ đề, sửa câu hỏi, chọn đáp án đúng và đánh dấu keyword thủ công." />
       <div className="grid gap-5 lg:grid-cols-[300px_1fr]">
-        <aside className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-          <button className="focus-ring w-full rounded-md bg-blue-600 px-4 py-2 font-medium text-white" onClick={() => setSelectedId(store.createSet("Bộ đề mới"))} type="button">
+        <aside className="panel p-4">
+          <button className="btn-primary w-full" onClick={() => setSelectedId(store.createSet("Bộ đề mới"))} type="button">
             Tạo bộ đề mới
           </button>
           <div className="mt-4 grid gap-2">
@@ -39,19 +39,19 @@ export default function SetsPage() {
         </aside>
         {selected ? (
           <section>
-            <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+            <div className="panel p-4">
               <label className="grid gap-2 text-sm font-medium">
                 Tên bộ đề
                 <input className="focus-ring rounded-md border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700" onChange={(e) => store.renameSet(selected.id, e.target.value)} value={selected.title} />
               </label>
               <div className="mt-4 flex flex-wrap gap-2">
-                <Link className="focus-ring rounded-md bg-emerald-600 px-4 py-2 font-medium text-white" href={`/study/${selected.id}`}>
+                <Link className="btn-primary" href={`/study/${selected.id}`}>
                   Ôn tập
                 </Link>
-                <Link className="focus-ring rounded-md bg-indigo-600 px-4 py-2 font-medium text-white" href={`/exam/${selected.id}`}>
+                <Link className="btn-secondary" href={`/exam/${selected.id}`}>
                   Thi thử
                 </Link>
-                <button className="focus-ring rounded-md border border-zinc-300 px-4 py-2 font-medium dark:border-zinc-700" onClick={() => store.addQuestion(selected.id, createBlankQuestion())} type="button">
+                <button className="btn-secondary" onClick={() => store.addQuestion(selected.id, createBlankQuestion())} type="button">
                   Thêm câu
                 </button>
                 <button className="focus-ring rounded-md border border-red-300 px-4 py-2 font-medium text-red-700 dark:border-red-800 dark:text-red-300" onClick={() => store.deleteSet(selected.id)} type="button">

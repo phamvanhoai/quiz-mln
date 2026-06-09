@@ -35,7 +35,7 @@ export default function StudyPage() {
       {!set || !question ? (
         <Link href="/sets" className="text-blue-600">Quay lại bộ đề</Link>
       ) : (
-        <section className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+        <section className="panel p-5">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div className="text-sm text-zinc-500">Câu {index + 1}/{set.questions.length}</div>
             <div className="flex gap-2">

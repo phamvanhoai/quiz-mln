@@ -54,7 +54,7 @@ export default function ImportPage() {
     <AppShell dark={store.dark} onToggleDark={store.toggleDark}>
       <PageTitle title="Import dữ liệu" description="Upload .docx/.pdf hoặc dán text, parse thành câu hỏi rồi chỉnh sửa preview trước khi lưu." />
       <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
-        <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+        <section className="panel p-4">
           <label className="grid gap-2 text-sm font-medium">
             Tên bộ đề
             <input className="focus-ring rounded-md border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700" onChange={(e) => setTitle(e.target.value)} value={title} />
@@ -68,10 +68,10 @@ export default function ImportPage() {
             <textarea className="focus-ring h-80 rounded-md border border-zinc-300 bg-transparent p-3 font-mono text-sm dark:border-zinc-700" onChange={(e) => setText(e.target.value)} value={text} />
           </label>
           <div className="mt-4 flex gap-2">
-            <button className="focus-ring rounded-md bg-blue-600 px-4 py-2 font-medium text-white" disabled={busy} onClick={parse} type="button">
+            <button className="btn-primary" disabled={busy} onClick={parse} type="button">
               Parse
             </button>
-            <button className="focus-ring rounded-md border border-zinc-300 px-4 py-2 font-medium dark:border-zinc-700" disabled={!questions.length} onClick={save} type="button">
+            <button className="btn-secondary" disabled={!questions.length} onClick={save} type="button">
               Lưu bộ đề
             </button>
           </div>
