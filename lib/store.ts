@@ -51,6 +51,29 @@ type CloudQuizSetRow = QuizSetRow & {
   quiz_set_questions: CloudSetQuestionRow[];
 };
 
+type SupabaseMaybeError = {
+  error: null | {
+    message?: string;
+    details?: string;
+    hint?: string;
+    code?: string;
+  };
+};
+
+function chunkRows<T>(rows: T[], size = 300) {
+  const chunks: T[][] = [];
+  for (let index = 0; index < rows.length; index += size) {
+    chunks.push(rows.slice(index, index + size));
+  }
+  return chunks;
+}
+
+function throwIfSupabaseError(result: SupabaseMaybeError, action: string) {
+  if (!result.error) return;
+  const details = [result.error.message, result.error.details, result.error.hint, result.error.code].filter(Boolean).join(" | ");
+  throw new Error(`${action}: ${details || "Supabase error"}`);
+}
+
 function fromCloudSet(row: CloudQuizSetRow): QuizSet {
   const questions = (row.quiz_set_questions ?? [])
     .slice()
@@ -135,37 +158,33 @@ async function saveSetsToCloud(supabase: NonNullable<ReturnType<typeof createCli
   const questionIds = uniqueQuestions.map((question) => question.id);
   const setIds = syncableSets.map((set) => set.id);
 
-  const operations = [
-    supabase.from("quiz_sets").upsert(setRows, { onConflict: "id" }),
-    questionRows.length ? supabase.from("questions").upsert(questionRows, { onConflict: "id" }) : Promise.resolve({ error: null })
-  ];
-  for (const operation of operations) {
-    const { error } = await operation;
-    if (error) throw error;
+  for (const rows of chunkRows(setRows)) {
+    throwIfSupabaseError(await supabase.from("quiz_sets").upsert(rows, { onConflict: "id" }), "Lưu bộ đề");
+  }
+  for (const rows of chunkRows(questionRows)) {
+    throwIfSupabaseError(await supabase.from("questions").upsert(rows, { onConflict: "id" }), "Lưu câu hỏi");
   }
 
   if (setIds.length) {
-    const { error } = await supabase.from("quiz_set_questions").delete().in("set_id", setIds);
-    if (error) throw error;
+    for (const ids of chunkRows(setIds)) {
+      throwIfSupabaseError(await supabase.from("quiz_set_questions").delete().in("set_id", ids), "Xóa liên kết bộ đề-câu hỏi cũ");
+    }
   }
   if (questionIds.length) {
-    const optionDelete = await supabase.from("options").delete().in("question_id", questionIds);
-    if (optionDelete.error) throw optionDelete.error;
-    const keywordDelete = await supabase.from("keywords").delete().in("question_id", questionIds);
-    if (keywordDelete.error) throw keywordDelete.error;
+    for (const ids of chunkRows(questionIds)) {
+      throwIfSupabaseError(await supabase.from("options").delete().in("question_id", ids), "Xóa đáp án cũ");
+      throwIfSupabaseError(await supabase.from("keywords").delete().in("question_id", ids), "Xóa keyword cũ");
+    }
   }
 
-  if (joinRows.length) {
-    const { error } = await supabase.from("quiz_set_questions").insert(joinRows);
-    if (error) throw error;
+  for (const rows of chunkRows(joinRows)) {
+    throwIfSupabaseError(await supabase.from("quiz_set_questions").insert(rows), "Lưu liên kết bộ đề-câu hỏi");
   }
-  if (optionRows.length) {
-    const { error } = await supabase.from("options").insert(optionRows);
-    if (error) throw error;
+  for (const rows of chunkRows(optionRows)) {
+    throwIfSupabaseError(await supabase.from("options").insert(rows), "Lưu đáp án");
   }
-  if (keywordRows.length) {
-    const { error } = await supabase.from("keywords").insert(keywordRows);
-    if (error) throw error;
+  for (const rows of chunkRows(keywordRows)) {
+    throwIfSupabaseError(await supabase.from("keywords").insert(rows), "Lưu keyword");
   }
 }
 
@@ -318,7 +337,7 @@ export function useQuizStore() {
         await saveSetsToCloud(supabase, sets);
         setCloudError(null);
       } catch (error) {
-        setCloudError(error instanceof Error ? error.message : "Không lưu được Supabase.");
+        setCloudError(error instanceof Error ? error.message : JSON.stringify(error));
       }
     }, 500);
 
