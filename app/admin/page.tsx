@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AdminShell, AdminTitle } from "@/components/AdminShell";
 import { getConfiguredSupabaseClient, useAuthUser } from "@/lib/auth";
 import { readSettings } from "@/lib/settings";
+import { useQuizStore } from "@/lib/store";
 
 type AdminStats = {
   sets: number;
@@ -26,6 +27,7 @@ function getAdminEmails() {
 }
 
 export default function AdminPage() {
+  const store = useQuizStore();
   const { user, loaded } = useAuthUser();
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [message, setMessage] = useState("");
@@ -125,14 +127,14 @@ export default function AdminPage() {
   }, [adminChecked, isAdmin]);
 
   return (
-    <AdminShell>
+    <AdminShell dark={store.dark} onToggleDark={store.toggleDark}>
       <AdminTitle title="Admin" description="Quản lý nhanh dữ liệu Supabase: thống kê, bộ đề rỗng và tiến trình học." />
       {!loaded || !adminChecked ? null : !user ? (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+        <div className="admin-panel p-5">
           Cần <Link className="text-blue-600" href="/login">đăng nhập</Link> để vào admin.
         </div>
       ) : !isAdmin ? (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+        <div className="admin-panel p-5">
           Email `{user.email}` chưa có quyền admin. Thêm email này vào trang Cấu hình hoặc `NEXT_PUBLIC_ADMIN_EMAILS`.
         </div>
       ) : (
@@ -152,7 +154,7 @@ export default function AdminPage() {
             <Stat label="Keyword" value={stats?.keywords ?? 0} />
             <Stat label="Progress" value={stats?.progressRows ?? 0} />
           </section>
-          <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+          <section className="admin-panel p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="font-semibold">Thao tác quản trị</h2>
@@ -166,18 +168,18 @@ export default function AdminPage() {
               <button className="btn-secondary" disabled={busy || !stats?.emptySets.length} onClick={deleteEmptySets} type="button">
                 Xóa bộ đề rỗng ({stats?.emptySets.length ?? 0})
               </button>
-              <button className="focus-ring rounded-lg border border-red-800 bg-zinc-950 px-4 py-2 font-medium text-red-300 hover:bg-red-950" disabled={busy} onClick={resetAllProgress} type="button">
+              <button className="focus-ring rounded-lg border border-red-300 bg-white px-4 py-2 font-medium text-red-700 hover:bg-red-50 dark:border-red-800 dark:bg-zinc-950 dark:text-red-300 dark:hover:bg-red-950" disabled={busy} onClick={resetAllProgress} type="button">
                 Reset toàn bộ progress
               </button>
             </div>
-            {message ? <div className="mt-4 rounded-lg bg-zinc-950 p-3 text-sm text-zinc-300">{message}</div> : null}
+            {message ? <div className="mt-4 rounded-lg bg-zinc-100 p-3 text-sm text-zinc-700 dark:bg-zinc-950 dark:text-zinc-300">{message}</div> : null}
           </section>
-          <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+          <section className="admin-panel p-5">
             <h2 className="font-semibold">Admin users</h2>
             <div className="mt-3 grid gap-2">
               {stats?.adminUsers.length ? (
                 stats.adminUsers.map((admin) => (
-                  <div className="rounded-lg border border-zinc-800 p-3 text-sm" key={admin.user_id}>
+                  <div className="rounded-lg border border-zinc-200 p-3 text-sm dark:border-zinc-800" key={admin.user_id}>
                     <div className="font-medium">{admin.email}</div>
                     <div className="font-mono text-xs text-zinc-500">{admin.user_id}</div>
                   </div>
@@ -187,12 +189,12 @@ export default function AdminPage() {
               )}
             </div>
           </section>
-          <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+          <section className="admin-panel p-5">
             <h2 className="font-semibold">Bộ đề rỗng</h2>
             <div className="mt-3 grid gap-2">
               {stats?.emptySets.length ? (
                 stats.emptySets.map((set) => (
-                  <div className="rounded-lg border border-zinc-800 p-3 text-sm" key={set.id}>
+                  <div className="rounded-lg border border-zinc-200 p-3 text-sm dark:border-zinc-800" key={set.id}>
                     <div className="font-medium">{set.title}</div>
                     <div className="font-mono text-xs text-zinc-500">{set.id}</div>
                   </div>
@@ -210,7 +212,7 @@ export default function AdminPage() {
 
 function Stat({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
+    <div className="admin-panel p-4">
       <div className="text-xs text-zinc-500">{label}</div>
       <div className="mt-1 text-2xl font-bold">{value}</div>
     </div>

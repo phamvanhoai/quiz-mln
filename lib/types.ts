@@ -6,6 +6,8 @@ export type QuizSet = {
   questions: Question[];
   createdAt: string;
   updatedAt: string;
+  createdBy?: string;
+  createdByEmail?: string;
 };
 
 export type Question = {

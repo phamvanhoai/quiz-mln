@@ -195,11 +195,16 @@ export default function ImportPage() {
   }
 
   function save() {
+    if (store.cloudEnabled && !store.userId) {
+      setErrors(["Bạn cần đăng nhập trước khi lưu bộ đề lên Supabase để hệ thống ghi nhận người tạo."]);
+      return;
+    }
     const id = store.createSet(title.trim() || "Bộ đề mới", questions);
     router.push(`/sets?set=${id}`);
   }
 
   const progressPercent = progress.total ? Math.round((progress.current / progress.total) * 100) : 0;
+  const mustLoginToSave = store.cloudEnabled && !store.userId;
 
   return (
     <AppShell dark={store.dark} onToggleDark={store.toggleDark}>
@@ -225,10 +230,13 @@ export default function ImportPage() {
             <button className="btn-secondary" disabled={busy || !text.trim()} onClick={parseWithAi} type="button">
               Parse bằng AI
             </button>
-            <button className="btn-secondary" disabled={!questions.length || busy} onClick={save} type="button">
-              Lưu bộ đề
+            <button className="btn-secondary disabled:cursor-not-allowed disabled:opacity-60" disabled={!questions.length || busy || mustLoginToSave} onClick={save} type="button">
+              {mustLoginToSave ? "Đăng nhập để lưu" : "Lưu bộ đề"}
             </button>
           </div>
+          {mustLoginToSave ? (
+            <div className="mt-3 text-sm text-amber-700 dark:text-amber-300">Bạn cần đăng nhập để lưu bộ đề theo người tạo.</div>
+          ) : null}
           {progress.active ? (
             <div className="mt-4 rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900">
               <div className="flex items-center justify-between gap-3 text-sm">

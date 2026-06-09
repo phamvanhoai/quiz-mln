@@ -22,11 +22,13 @@ export function createBlankQuestion(): Question {
 export function QuestionEditor({
   question,
   onChange,
-  onDelete
+  onDelete,
+  readOnly = false
 }: {
   question: Question;
   onChange: (question: Question) => void;
   onDelete?: () => void;
+  readOnly?: boolean;
 }) {
   const textRef = useRef<HTMLTextAreaElement>(null);
   const [message, setMessage] = useState("");
@@ -45,27 +47,30 @@ export function QuestionEditor({
     <div className="panel p-4">
       <div className="flex items-center justify-between gap-3">
         <div className="font-semibold">Câu hỏi</div>
-        {onDelete ? (
+        {onDelete && !readOnly ? (
           <button className="focus-ring rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-700 dark:border-red-800 dark:text-red-300" onClick={onDelete} type="button">
             Xóa
           </button>
         ) : null}
       </div>
       <textarea
-        className="focus-ring mt-3 min-h-24 w-full rounded-md border border-zinc-300 bg-transparent p-3 dark:border-zinc-700"
+        className="focus-ring mt-3 min-h-24 w-full rounded-md border border-zinc-300 bg-transparent p-3 disabled:cursor-not-allowed disabled:opacity-70 dark:border-zinc-700"
+        disabled={readOnly}
         onChange={(event) => onChange({ ...question, questionText: event.target.value, keywords: [] })}
         ref={textRef}
         value={question.questionText}
       />
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <button className="focus-ring rounded-md bg-yellow-300 px-3 py-2 text-sm font-medium text-ink" onClick={markKeyword} type="button">
-          Đánh dấu keyword
-        </button>
-        <button className="focus-ring rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700" onClick={() => onChange({ ...question, keywords: [] })} type="button">
-          Xóa keyword
-        </button>
-        {message ? <span className="text-sm text-zinc-500">{message}</span> : null}
-      </div>
+      {!readOnly ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <button className="focus-ring rounded-md bg-yellow-300 px-3 py-2 text-sm font-medium text-ink" onClick={markKeyword} type="button">
+            Đánh dấu keyword
+          </button>
+          <button className="focus-ring rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700" onClick={() => onChange({ ...question, keywords: [] })} type="button">
+            Xóa keyword
+          </button>
+          {message ? <span className="text-sm text-zinc-500">{message}</span> : null}
+        </div>
+      ) : null}
       <div className="mt-4 grid gap-3">
         {question.options.map((option) => (
           <label className="grid gap-1" key={option.id}>
@@ -73,12 +78,14 @@ export function QuestionEditor({
             <div className="flex gap-2">
               <input
                 checked={question.correctOptionId === option.id}
+                disabled={readOnly}
                 name={`correct-${question.id}`}
                 onChange={() => onChange({ ...question, correctOptionId: option.id })}
                 type="radio"
               />
               <input
-                className="focus-ring w-full rounded-md border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700"
+                className="focus-ring w-full rounded-md border border-zinc-300 bg-transparent px-3 py-2 disabled:cursor-not-allowed disabled:opacity-70 dark:border-zinc-700"
+                disabled={readOnly}
                 onChange={(event) =>
                   onChange({
                     ...question,
@@ -94,7 +101,8 @@ export function QuestionEditor({
       <label className="mt-4 grid gap-1">
         <span className="text-sm font-medium">Giải thích</span>
         <textarea
-          className="focus-ring min-h-20 rounded-md border border-zinc-300 bg-transparent p-3 dark:border-zinc-700"
+          className="focus-ring min-h-20 rounded-md border border-zinc-300 bg-transparent p-3 disabled:cursor-not-allowed disabled:opacity-70 dark:border-zinc-700"
+          disabled={readOnly}
           onChange={(event) => onChange({ ...question, explanation: event.target.value })}
           value={question.explanation ?? ""}
         />

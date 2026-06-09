@@ -15,6 +15,8 @@ const sampleSetId = "sample-mln111";
 type QuizSetRow = {
   id: string;
   title: string;
+  created_by: string | null;
+  created_by_email: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -116,17 +118,22 @@ function fromCloudSet(row: CloudQuizSetRow): QuizSet {
     title: row.title,
     questions,
     createdAt: row.created_at,
-    updatedAt: row.updated_at
+    updatedAt: row.updated_at,
+    createdBy: row.created_by ?? undefined,
+    createdByEmail: row.created_by_email ?? undefined
   };
 }
 
-async function saveSetsToCloud(supabase: NonNullable<ReturnType<typeof createClient>>, sets: QuizSet[]) {
-  const syncableSets = sets.filter((set) => set.id !== sampleSetId);
+async function saveSetsToCloud(supabase: NonNullable<ReturnType<typeof createClient>>, sets: QuizSet[], user: { id: string; email?: string | null } | null) {
+  if (!user) return;
+  const syncableSets = sets.filter((set) => set.id !== sampleSetId && (!set.createdBy || set.createdBy === user.id));
   if (!syncableSets.length) return;
 
   const setRows = syncableSets.map((set) => ({
     id: set.id,
     title: set.title,
+    created_by: set.createdBy ?? user.id,
+    created_by_email: set.createdByEmail ?? user.email ?? null,
     created_at: set.createdAt,
     updated_at: set.updatedAt
   }));
@@ -261,6 +268,7 @@ export function useQuizStore() {
   const [cloudEnabled, setCloudEnabled] = useState(hasSupabaseConfig());
   const [cloudError, setCloudError] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
   const [progressCloudReady, setProgressCloudReady] = useState(false);
   const [dark, setDark] = useState(false);
 
@@ -282,9 +290,11 @@ export function useQuizStore() {
     if (supabase) {
       supabase.auth.getUser().then(({ data }) => {
         setUserId(data.user?.id ?? null);
+        setUserEmail(data.user?.email ?? null);
       });
       const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
         setUserId(session?.user?.id ?? null);
+        setUserEmail(session?.user?.email ?? null);
       });
       return () => listener.subscription.unsubscribe();
     }
@@ -312,6 +322,8 @@ export function useQuizStore() {
           title,
           created_at,
           updated_at,
+          created_by,
+          created_by_email,
           quiz_set_questions (
             position,
             questions (
@@ -351,13 +363,13 @@ export function useQuizStore() {
   }, [loaded, sets]);
 
   useEffect(() => {
-    if (!loaded || !cloudReady || !cloudEnabled || !sets.length) return;
+    if (!loaded || !cloudReady || !cloudEnabled || !sets.length || !userId) return;
     const supabase = createClient(cloudConfig);
     if (!supabase) return;
 
     const timer = window.setTimeout(async () => {
       try {
-        await saveSetsToCloud(supabase, sets);
+        await saveSetsToCloud(supabase, sets, { id: userId, email: userEmail });
         setCloudError(null);
       } catch (error) {
         setCloudError(error instanceof Error ? error.message : JSON.stringify(error));
@@ -365,7 +377,7 @@ export function useQuizStore() {
     }, 500);
 
     return () => window.clearTimeout(timer);
-  }, [cloudConfig, cloudEnabled, cloudReady, loaded, sets]);
+  }, [cloudConfig, cloudEnabled, cloudReady, loaded, sets, userEmail, userId]);
 
   useEffect(() => {
     if (loaded) writeJson(progressKey, progress);
@@ -457,19 +469,25 @@ export function useQuizStore() {
   }, []);
 
   const createSet = useCallback((title: string, questions: Question[] = []) => {
-    const set: QuizSet = { id: uid("set"), title, questions, createdAt: nowIso(), updatedAt: nowIso() };
+    const set: QuizSet = {
+      id: uid("set"),
+      title,
+      questions,
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+      createdBy: userId ?? undefined,
+      createdByEmail: userEmail ?? undefined
+    };
     setSets((items) => persistSets([set, ...items.filter((item) => item.id !== sampleSetId)]));
     return set.id;
-  }, []);
+  }, [userEmail, userId]);
 
   const deleteSet = useCallback((setId: string) => {
     setSets((items) => persistSets(items.filter((item) => item.id !== setId)));
     const supabase = createClient(cloudConfig);
     if (supabase) {
       supabase
-        .from("quiz_sets")
-        .delete()
-        .eq("id", setId)
+        .rpc("delete_quiz_set_with_questions", { target_set_id: setId })
         .then(({ error }) => setCloudError(error?.message ?? null));
     }
   }, [cloudConfig]);
@@ -540,6 +558,7 @@ export function useQuizStore() {
     cloudReady,
     cloudError,
     userId,
+    userEmail,
     sets,
     progress,
     dark,
