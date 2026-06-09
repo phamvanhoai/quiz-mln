@@ -60,6 +60,16 @@ type SupabaseMaybeError = {
   };
 };
 
+type ProgressRow = {
+  user_id: string;
+  question_id: string;
+  learned: boolean;
+  starred: boolean;
+  wrong_count: number;
+  correct_streak: number;
+  updated_at: string;
+};
+
 function chunkRows<T>(rows: T[], size = 300) {
   const chunks: T[][] = [];
   for (let index = 0; index < rows.length; index += size) {
@@ -250,6 +260,8 @@ export function useQuizStore() {
   const [cloudConfig, setCloudConfig] = useState<{ url?: string; key?: string }>({});
   const [cloudEnabled, setCloudEnabled] = useState(hasSupabaseConfig());
   const [cloudError, setCloudError] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [progressCloudReady, setProgressCloudReady] = useState(false);
   const [dark, setDark] = useState(false);
 
   useEffect(() => {
@@ -265,6 +277,17 @@ export function useQuizStore() {
     setDark(enabled);
     document.documentElement.classList.toggle("dark", enabled);
     setLoaded(true);
+
+    const supabase = createClient(config);
+    if (supabase) {
+      supabase.auth.getUser().then(({ data }) => {
+        setUserId(data.user?.id ?? null);
+      });
+      const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+        setUserId(session?.user?.id ?? null);
+      });
+      return () => listener.subscription.unsubscribe();
+    }
   }, []);
 
   useEffect(() => {
@@ -347,6 +370,74 @@ export function useQuizStore() {
   useEffect(() => {
     if (loaded) writeJson(progressKey, progress);
   }, [loaded, progress]);
+
+  useEffect(() => {
+    if (!loaded || !cloudEnabled || !userId) {
+      setProgressCloudReady(true);
+      return;
+    }
+    const supabase = createClient(cloudConfig);
+    if (!supabase) {
+      setProgressCloudReady(true);
+      return;
+    }
+
+    let cancelled = false;
+    supabase
+      .from("user_question_progress")
+      .select("user_id, question_id, learned, starred, wrong_count, correct_streak, updated_at")
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          setCloudError(error.message);
+          setProgressCloudReady(true);
+          return;
+        }
+        const cloudProgress: ProgressMap = {};
+        for (const row of (data ?? []) as ProgressRow[]) {
+          cloudProgress[row.question_id] = {
+            learned: row.learned,
+            starred: row.starred,
+            wrongCount: row.wrong_count,
+            correctStreak: row.correct_streak
+          };
+        }
+        setProgress((current) => ({ ...current, ...cloudProgress }));
+        setProgressCloudReady(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cloudConfig, cloudEnabled, loaded, userId]);
+
+  useEffect(() => {
+    if (!loaded || !cloudEnabled || !progressCloudReady || !userId) return;
+    const supabase = createClient(cloudConfig);
+    if (!supabase) return;
+    const rows = Object.entries(progress).map(([questionId, item]) => ({
+      user_id: userId,
+      question_id: questionId,
+      learned: item.learned,
+      starred: item.starred,
+      wrong_count: item.wrongCount,
+      correct_streak: item.correctStreak,
+      updated_at: nowIso()
+    }));
+    if (!rows.length) return;
+
+    const timer = window.setTimeout(async () => {
+      try {
+        for (const chunk of chunkRows(rows)) {
+          throwIfSupabaseError(await supabase.from("user_question_progress").upsert(chunk, { onConflict: "user_id,question_id" }), "Lưu tiến trình học");
+        }
+      } catch (error) {
+        setCloudError(error instanceof Error ? error.message : JSON.stringify(error));
+      }
+    }, 500);
+
+    return () => window.clearTimeout(timer);
+  }, [cloudConfig, cloudEnabled, loaded, progress, progressCloudReady, userId]);
 
   const toggleDark = useCallback(() => {
     setDark((value) => {
@@ -448,6 +539,7 @@ export function useQuizStore() {
     cloudEnabled,
     cloudReady,
     cloudError,
+    userId,
     sets,
     progress,
     dark,

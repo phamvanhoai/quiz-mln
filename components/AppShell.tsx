@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ReactNode } from "react";
+import { getConfiguredSupabaseClient, useAuthUser } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
 const nav = [
@@ -10,11 +11,13 @@ const nav = [
   { href: "/import", label: "Import" },
   { href: "/sets", label: "Bộ đề" },
   { href: "/wrong", label: "Câu sai" },
+  { href: "/login", label: "Tài khoản" },
   { href: "/settings", label: "Cấu hình" }
 ];
 
 export function AppShell({ children, dark, onToggleDark }: { children: ReactNode; dark: boolean; onToggleDark: () => void }) {
   const pathname = usePathname();
+  const { user } = useAuthUser();
   const isActive = (href: string) => {
     if (href === "/sets") return pathname === "/sets" || pathname.startsWith("/study") || pathname.startsWith("/exam");
     return pathname === href;
@@ -62,6 +65,29 @@ export function AppShell({ children, dark, onToggleDark }: { children: ReactNode
             );
           })}
         </nav>
+        <div className="mx-auto max-w-6xl px-4 pb-4 lg:px-6">
+          <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400">
+            {user ? (
+              <div className="grid gap-2">
+                <div className="truncate font-medium text-zinc-900 dark:text-zinc-100">{user.email}</div>
+                <button
+                  className="text-left font-medium text-red-600 dark:text-red-400"
+                  onClick={async () => {
+                    await getConfiguredSupabaseClient()?.auth.signOut();
+                    window.location.reload();
+                  }}
+                  type="button"
+                >
+                  Đăng xuất
+                </button>
+              </div>
+            ) : (
+              <Link className="font-medium text-blue-600 dark:text-blue-400" href="/login">
+                Chưa đăng nhập
+              </Link>
+            )}
+          </div>
+        </div>
       </aside>
       <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:py-8 lg:px-8">{children}</main>
     </div>
