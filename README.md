@@ -22,6 +22,22 @@ Vào trang Import, upload PDF/DOCX hoặc dán text, sau đó chọn `Parse bằ
 
 Bạn cũng có thể nhập Google AI key và Supabase publishable key trực tiếp trong trang `Cấu hình` của app. Cấu hình này lưu trong localStorage và ưu tiên hơn `.env`.
 
+## Admin panel
+
+Admin thật được lưu trong bảng `public.admin_users`. Để bootstrap admin đầu tiên, thêm email admin trong trang `Cấu hình` hoặc biến môi trường:
+
+```bash
+NEXT_PUBLIC_ADMIN_EMAILS=admin@example.com,teacher@example.com
+```
+
+Sau khi user đã tồn tại trong Supabase Auth, chạy:
+
+```bash
+npm run admin:sync
+```
+
+Hoặc đăng nhập bằng email bootstrap rồi vào `/admin` bấm `Thêm tôi vào admin_users`.
+
 ## Tạo bảng Supabase bằng CLI
 
 ```bash

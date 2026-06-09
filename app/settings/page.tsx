@@ -77,6 +77,15 @@ export default function SettingsPage() {
               />
             </div>
           </div>
+          <div className="border-t border-zinc-200 pt-5 dark:border-zinc-800">
+            <div className="mb-3 text-sm font-semibold">Admin</div>
+            <Field
+              label="Admin emails"
+              placeholder="admin@example.com, teacher@example.com"
+              value={draft.adminEmails}
+              onChange={(value) => update("adminEmails", value)}
+            />
+          </div>
         </div>
         <div className="mt-6 flex flex-wrap gap-2">
           <button className="btn-primary" onClick={saveSettings} type="button">

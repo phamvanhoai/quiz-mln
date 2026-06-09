@@ -9,7 +9,8 @@
     "lint": "next lint",
     "supabase:link": "npx supabase@latest link --project-ref qcqzfkqzllxaqgwrbary",
     "supabase:push": "npx supabase@latest db push",
-    "supabase:schema": "node tools/apply_supabase_schema.mjs"
+    "supabase:schema": "node tools/apply_supabase_schema.mjs",
+    "admin:sync": "node tools/sync_admin_users.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",

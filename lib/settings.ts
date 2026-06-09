@@ -7,6 +7,7 @@ export type AppSettings = {
   googleAiModel: string;
   supabaseUrl: string;
   supabasePublishableKey: string;
+  adminEmails: string;
 };
 
 export const settingsKey = "quiz-mln.settings";
@@ -15,7 +16,8 @@ export const defaultSettings: AppSettings = {
   googleAiApiKey: "",
   googleAiModel: "gemini-2.5-flash",
   supabaseUrl: "",
-  supabasePublishableKey: ""
+  supabasePublishableKey: "",
+  adminEmails: ""
 };
 
 export function readSettings(): AppSettings {

@@ -48,6 +48,25 @@ create table if not exists public.user_question_progress (
   primary key (user_id, question_id)
 );
 
+create table if not exists public.admin_users (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  email text not null unique,
+  created_at timestamptz not null default now()
+);
+
+create or replace function public.is_admin()
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.admin_users
+    where user_id = auth.uid()
+  );
+$$;
+
 create index if not exists quiz_set_questions_set_id_position_idx
 on public.quiz_set_questions(set_id, position);
 
@@ -59,6 +78,9 @@ on public.keywords(question_id);
 
 create index if not exists user_question_progress_user_id_idx
 on public.user_question_progress(user_id);
+
+create index if not exists admin_users_email_idx
+on public.admin_users(lower(email));
 
 do $$
 begin
@@ -140,6 +162,7 @@ alter table public.quiz_set_questions enable row level security;
 alter table public.options enable row level security;
 alter table public.keywords enable row level security;
 alter table public.user_question_progress enable row level security;
+alter table public.admin_users enable row level security;
 
 drop policy if exists "Public quiz sets are readable" on public.quiz_sets;
 drop policy if exists "Public quiz sets are writable" on public.quiz_sets;
@@ -153,6 +176,8 @@ drop policy if exists "Public keywords are readable" on public.keywords;
 drop policy if exists "Public keywords are writable" on public.keywords;
 drop policy if exists "Users can read own progress" on public.user_question_progress;
 drop policy if exists "Users can write own progress" on public.user_question_progress;
+drop policy if exists "Admins can read admin users" on public.admin_users;
+drop policy if exists "Admins can write admin users" on public.admin_users;
 
 create policy "Public quiz sets are readable" on public.quiz_sets for select to anon, authenticated using (true);
 create policy "Public quiz sets are writable" on public.quiz_sets for all to anon, authenticated using (true) with check (true);
@@ -179,3 +204,14 @@ on public.user_question_progress for all
 to authenticated
 using (auth.uid() = user_id)
 with check (auth.uid() = user_id);
+
+create policy "Admins can read admin users"
+on public.admin_users for select
+to authenticated
+using (user_id = auth.uid() or public.is_admin());
+
+create policy "Admins can write admin users"
+on public.admin_users for all
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
