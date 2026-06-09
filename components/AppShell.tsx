@@ -14,6 +14,11 @@ const nav = [
 
 export function AppShell({ children, dark, onToggleDark }: { children: ReactNode; dark: boolean; onToggleDark: () => void }) {
   const pathname = usePathname();
+  const isActive = (href: string) => {
+    if (href === "/sets") return pathname === "/sets" || pathname.startsWith("/study") || pathname.startsWith("/exam");
+    return pathname === href;
+  };
+
   return (
     <div className="min-h-screen lg:flex">
       <aside className="border-b border-zinc-200 bg-white/85 backdrop-blur-xl dark:border-zinc-800 dark:bg-black/80 lg:sticky lg:top-0 lg:h-screen lg:w-72 lg:border-b-0 lg:border-r">
@@ -38,18 +43,23 @@ export function AppShell({ children, dark, onToggleDark }: { children: ReactNode
           </button>
         </div>
         <nav className="mx-auto flex max-w-6xl gap-2 overflow-x-auto px-4 pb-4 lg:block lg:px-6">
-          {nav.map((item) => (
-            <Link
-              className={cn(
-                "focus-ring block whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium text-zinc-600 transition hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-900",
-                pathname === item.href && "bg-zinc-950 text-white shadow-sm hover:bg-zinc-950 dark:bg-white dark:text-zinc-950 dark:hover:bg-white"
-              )}
-              href={item.href}
-              key={item.href}
-            >
-              {item.label}
-            </Link>
-          ))}
+          {nav.map((item) => {
+            const active = isActive(item.href);
+            return (
+              <Link
+                className={cn(
+                  "focus-ring block whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition",
+                  active
+                    ? "bg-zinc-950 text-white shadow-sm hover:bg-zinc-950 dark:bg-white dark:text-zinc-950 dark:hover:bg-white"
+                    : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950 dark:text-zinc-300 dark:hover:bg-zinc-900 dark:hover:text-white"
+                )}
+                href={item.href}
+                key={item.href}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
         </nav>
       </aside>
       <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:py-8 lg:px-8">{children}</main>

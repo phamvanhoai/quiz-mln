@@ -6,6 +6,13 @@ const optionLine = /^([A-D])[\.\)]\s*(.+)$/i;
 const questionStart = /^(\d+)[\.\)]\s*(.+)$/;
 const answerOnly = /^(?:Đáp\s*án\s*:?\s*)?([A-D])$/i;
 
+type CurrentQuestion = {
+  number: string;
+  question: string[];
+  options: Record<OptionLabel, string>;
+  answer?: OptionLabel;
+};
+
 function normalize(text: string) {
   return text
     .replace(/\r/g, "\n")
@@ -23,12 +30,11 @@ function makeOptions(raw: Record<OptionLabel, string>): Option[] {
   }));
 }
 
-function pushQuestion(
-  blocks: Question[],
-  errors: string[],
-  current: { number: string; question: string[]; options: Record<OptionLabel, string>; answer?: OptionLabel } | null
-) {
+function pushQuestion(blocks: Question[], errors: string[], current: CurrentQuestion | null) {
   if (!current) return;
+  const questionText = current.question.join(" ").replace(/\s+/g, " ").trim();
+  if (!questionText) return;
+
   const options = makeOptions(current.options);
   const missing = options.filter((option) => !option.text).map((option) => option.label);
   if (missing.length) {
@@ -40,7 +46,7 @@ function pushQuestion(
   const correct = options.find((option) => option.label === current.answer) ?? options[0];
   blocks.push({
     id: uid("question"),
-    questionText: current.question.join(" ").replace(/\s+/g, " ").trim(),
+    questionText,
     keywords: [],
     options,
     correctOptionId: correct.id
@@ -58,19 +64,42 @@ export function parseQuizTextWithErrors(text: string): ParseResult {
     .filter(Boolean);
   const questions: Question[] = [];
   const errors: string[] = [];
-  let current: { number: string; question: string[]; options: Record<OptionLabel, string>; answer?: OptionLabel } | null = null;
+  let current: CurrentQuestion | null = null;
   let activeOption: OptionLabel | null = null;
+  let autoNumber = 1;
+
+  function makeQuestion(firstLine: string, number?: string): CurrentQuestion {
+    return {
+      number: number ?? `không đánh số ${autoNumber++}`,
+      question: [firstLine],
+      options: { A: "", B: "", C: "", D: "" }
+    };
+  }
 
   for (const line of lines) {
-    const q = line.match(questionStart);
-    if (q) {
+    const numbered = line.match(questionStart);
+    if (numbered) {
       pushQuestion(questions, errors, current);
-      current = { number: q[1], question: [q[2]], options: { A: "", B: "", C: "", D: "" } };
+      current = makeQuestion(numbered[2], numbered[1]);
       activeOption = null;
       continue;
     }
 
+    const option = line.match(optionLine);
+    if (option) {
+      if (!current) {
+        errors.push(`Gặp đáp án ${option[1].toUpperCase()} nhưng chưa có nội dung câu hỏi phía trước.`);
+        continue;
+      }
+      const target = current as CurrentQuestion;
+      activeOption = option[1].toUpperCase() as OptionLabel;
+      target.options[activeOption] = option[2].trim();
+      continue;
+    }
+
     if (!current) {
+      current = makeQuestion(line);
+      activeOption = null;
       continue;
     }
 
@@ -81,10 +110,11 @@ export function parseQuizTextWithErrors(text: string): ParseResult {
       continue;
     }
 
-    const option = line.match(optionLine);
-    if (option) {
-      activeOption = option[1].toUpperCase() as OptionLabel;
-      current.options[activeOption] = option[2].trim();
+    const hasAllOptions = optionLabels.every((label) => Boolean(current?.options[label]));
+    if (current.answer && hasAllOptions) {
+      pushQuestion(questions, errors, current);
+      current = makeQuestion(line);
+      activeOption = null;
       continue;
     }
 
@@ -97,7 +127,7 @@ export function parseQuizTextWithErrors(text: string): ParseResult {
 
   pushQuestion(questions, errors, current);
   if (!questions.length) {
-    errors.push("Không tìm thấy câu hỏi. Hãy kiểm tra định dạng số câu, đáp án A-D và dòng đáp án đúng.");
+    errors.push("Không tìm thấy câu hỏi. Hãy kiểm tra định dạng nội dung câu, đáp án A-D và dòng đáp án đúng.");
   }
   return { questions, errors };
 }
