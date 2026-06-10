@@ -221,6 +221,7 @@ export function useQuizStore() {
   const [cloudError, setCloudError] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [authReady, setAuthReady] = useState(false);
   const [progressCloudReady, setProgressCloudReady] = useState(false);
   const [dark, setDark] = useState(false);
 
@@ -244,13 +245,16 @@ export function useQuizStore() {
       supabase.auth.getUser().then(({ data }) => {
         setUserId(data.user?.id ?? null);
         setUserEmail(data.user?.email ?? null);
+        setAuthReady(true);
       });
       const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
         setUserId(session?.user?.id ?? null);
         setUserEmail(session?.user?.email ?? null);
+        setAuthReady(true);
       });
       return () => listener.subscription.unsubscribe();
     }
+    setAuthReady(true);
   }, []);
 
   useEffect(() => {
@@ -259,6 +263,7 @@ export function useQuizStore() {
       setCloudReady(true);
       return;
     }
+    if (!authReady) return;
 
     let cancelled = false;
     async function loadCloud() {
@@ -309,24 +314,19 @@ export function useQuizStore() {
     return () => {
       cancelled = true;
     };
-  }, [cloudConfig, cloudEnabled, loaded]);
+  }, [authReady, cloudConfig, cloudEnabled, loaded, userId, userEmail]);
 
-  useEffect(() => {
-    if (!loaded || !cloudReady || !cloudEnabled || !sets.length || !userId) return;
+  const persistSetToCloud = useCallback(async (set: QuizSet) => {
+    if (!cloudEnabled || !userId) return;
     const supabase = createClient(cloudConfig);
     if (!supabase) return;
-
-    const timer = window.setTimeout(async () => {
-      try {
-        await saveSetsToCloud(supabase, sets, { id: userId, email: userEmail });
-        setCloudError(null);
-      } catch (error) {
-        setCloudError(error instanceof Error ? error.message : JSON.stringify(error));
-      }
-    }, 500);
-
-    return () => window.clearTimeout(timer);
-  }, [cloudConfig, cloudEnabled, cloudReady, loaded, sets, userEmail, userId]);
+    try {
+      await saveSetsToCloud(supabase, [set], { id: userId, email: userEmail });
+      setCloudError(null);
+    } catch (error) {
+      setCloudError(error instanceof Error ? error.message : JSON.stringify(error));
+    }
+  }, [cloudConfig, cloudEnabled, userEmail, userId]);
 
   useEffect(() => {
     setProgressCloudReady(false);
@@ -413,9 +413,10 @@ export function useQuizStore() {
     setSets((items) => {
       const exists = items.some((item) => item.id === set.id);
       const next = { ...set, updatedAt: nowIso() };
+      void persistSetToCloud(next);
       return persistSets(exists ? items.map((item) => (item.id === set.id ? next : item)) : [next, ...items]);
     });
-  }, []);
+  }, [persistSetToCloud]);
 
   const createSet = useCallback((title: string, questions: Question[] = []) => {
     const set: QuizSet = {
@@ -428,9 +429,10 @@ export function useQuizStore() {
       createdByEmail: userEmail ?? undefined,
       visibility: "private"
     };
+    void persistSetToCloud(set);
     setSets((items) => persistSets([set, ...items.filter((item) => item.id !== sampleSetId)]));
     return set.id;
-  }, [userEmail, userId]);
+  }, [persistSetToCloud, userEmail, userId]);
 
   const deleteSet = useCallback((setId: string) => {
     setSets((items) => persistSets(items.filter((item) => item.id !== setId)));
@@ -443,32 +445,56 @@ export function useQuizStore() {
   }, [cloudConfig]);
 
   const renameSet = useCallback((setId: string, title: string) => {
-    setSets((items) => persistSets(items.map((item) => (item.id === setId ? { ...item, title, updatedAt: nowIso() } : item))));
-  }, []);
+    setSets((items) => {
+      let changed: QuizSet | null = null;
+      const nextItems = items.map((item) => {
+        if (item.id !== setId) return item;
+        changed = { ...item, title, updatedAt: nowIso() };
+        return changed;
+      });
+      if (changed) void persistSetToCloud(changed);
+      return persistSets(nextItems);
+    });
+  }, [persistSetToCloud]);
 
   const updateQuestion = useCallback((setId: string, question: Question) => {
-    setSets((items) =>
-      persistSets(items.map((set) =>
-        set.id === setId
-          ? { ...set, updatedAt: nowIso(), questions: set.questions.map((item) => (item.id === question.id ? question : item)) }
-          : set
-      ))
-    );
-  }, []);
+    setSets((items) => {
+      let changed: QuizSet | null = null;
+      const nextItems = items.map((set) => {
+        if (set.id !== setId) return set;
+        changed = { ...set, updatedAt: nowIso(), questions: set.questions.map((item) => (item.id === question.id ? question : item)) };
+        return changed;
+      });
+      if (changed) void persistSetToCloud(changed);
+      return persistSets(nextItems);
+    });
+  }, [persistSetToCloud]);
 
   const addQuestion = useCallback((setId: string, question: Question) => {
-    setSets((items) =>
-      persistSets(items.map((set) => (set.id === setId ? { ...set, updatedAt: nowIso(), questions: [...set.questions, question] } : set)))
-    );
-  }, []);
+    setSets((items) => {
+      let changed: QuizSet | null = null;
+      const nextItems = items.map((set) => {
+        if (set.id !== setId) return set;
+        changed = { ...set, updatedAt: nowIso(), questions: [...set.questions, question] };
+        return changed;
+      });
+      if (changed) void persistSetToCloud(changed);
+      return persistSets(nextItems);
+    });
+  }, [persistSetToCloud]);
 
   const deleteQuestion = useCallback((setId: string, questionId: string) => {
-    setSets((items) =>
-      persistSets(items.map((set) =>
-        set.id === setId ? { ...set, updatedAt: nowIso(), questions: set.questions.filter((q) => q.id !== questionId) } : set
-      ))
-    );
-  }, []);
+    setSets((items) => {
+      let changed: QuizSet | null = null;
+      const nextItems = items.map((set) => {
+        if (set.id !== setId) return set;
+        changed = { ...set, updatedAt: nowIso(), questions: set.questions.filter((q) => q.id !== questionId) };
+        return changed;
+      });
+      if (changed) void persistSetToCloud(changed);
+      return persistSets(nextItems);
+    });
+  }, [persistSetToCloud]);
 
   const markAnswer = useCallback((questionId: string, correct: boolean) => {
     setProgress((items) => {
