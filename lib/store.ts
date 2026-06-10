@@ -15,6 +15,7 @@ const sampleSetId = "sample-mln111";
 type QuizSetRow = {
   id: string;
   title: string;
+  visibility: "private" | "shared" | "public" | null;
   created_by: string | null;
   created_by_email: string | null;
   created_at: string;
@@ -120,7 +121,8 @@ function fromCloudSet(row: CloudQuizSetRow): QuizSet {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     createdBy: row.created_by ?? undefined,
-    createdByEmail: row.created_by_email ?? undefined
+    createdByEmail: row.created_by_email ?? undefined,
+    visibility: row.visibility ?? "public"
   };
 }
 
@@ -132,6 +134,7 @@ async function saveSetsToCloud(supabase: NonNullable<ReturnType<typeof createCli
   const setRows = syncableSets.map((set) => ({
     id: set.id,
     title: set.title,
+    visibility: set.visibility ?? "private",
     created_by: set.createdBy ?? user.id,
     created_by_email: set.createdByEmail ?? user.email ?? null,
     created_at: set.createdAt,
@@ -320,6 +323,7 @@ export function useQuizStore() {
           `
           id,
           title,
+          visibility,
           created_at,
           updated_at,
           created_by,
@@ -476,7 +480,8 @@ export function useQuizStore() {
       createdAt: nowIso(),
       updatedAt: nowIso(),
       createdBy: userId ?? undefined,
-      createdByEmail: userEmail ?? undefined
+      createdByEmail: userEmail ?? undefined,
+      visibility: "private"
     };
     setSets((items) => persistSets([set, ...items.filter((item) => item.id !== sampleSetId)]));
     return set.id;

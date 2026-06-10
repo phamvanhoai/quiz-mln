@@ -1,6 +1,7 @@
 create table if not exists public.quiz_sets (
   id text primary key,
   title text not null,
+  visibility text not null default 'public' check (visibility in ('private', 'shared', 'public')),
   created_by uuid references auth.users(id) on delete set null,
   created_by_email text,
   created_at timestamptz not null default now(),
@@ -9,6 +10,9 @@ create table if not exists public.quiz_sets (
 
 alter table public.quiz_sets add column if not exists created_by uuid references auth.users(id) on delete set null;
 alter table public.quiz_sets add column if not exists created_by_email text;
+alter table public.quiz_sets add column if not exists visibility text not null default 'public';
+alter table public.quiz_sets drop constraint if exists quiz_sets_visibility_check;
+alter table public.quiz_sets add constraint quiz_sets_visibility_check check (visibility in ('private', 'shared', 'public'));
 
 create table if not exists public.questions (
   id text primary key,
@@ -59,6 +63,24 @@ create table if not exists public.admin_users (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.quiz_set_shares (
+  id uuid primary key default gen_random_uuid(),
+  set_id text not null references public.quiz_sets(id) on delete cascade,
+  shared_with_user_id uuid references auth.users(id) on delete cascade,
+  shared_with_email text,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  constraint quiz_set_shares_target_check check (shared_with_user_id is not null or nullif(shared_with_email, '') is not null)
+);
+
+create unique index if not exists quiz_set_shares_set_user_idx
+on public.quiz_set_shares(set_id, shared_with_user_id)
+where shared_with_user_id is not null;
+
+create unique index if not exists quiz_set_shares_set_email_idx
+on public.quiz_set_shares(set_id, lower(shared_with_email))
+where shared_with_email is not null;
+
 create or replace function public.is_admin()
 returns boolean
 language sql
@@ -98,6 +120,47 @@ as $$
     join public.quiz_sets qs on qs.id = qsq.set_id
     where qsq.question_id = target_question_id
       and (qs.created_by = auth.uid() or public.is_admin())
+  );
+$$;
+
+create or replace function public.can_read_set(target_set_id text)
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.quiz_sets qs
+    where qs.id = target_set_id
+      and (
+        qs.visibility = 'public'
+        or qs.created_by = auth.uid()
+        or public.is_admin()
+        or exists (
+          select 1
+          from public.quiz_set_shares share
+          where share.set_id = qs.id
+            and (
+              share.shared_with_user_id = auth.uid()
+              or lower(coalesce(share.shared_with_email, '')) = lower(coalesce(auth.jwt()->>'email', ''))
+            )
+        )
+      )
+  );
+$$;
+
+create or replace function public.can_read_question(target_question_id text)
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.quiz_set_questions qsq
+    where qsq.question_id = target_question_id
+      and public.can_read_set(qsq.set_id)
   );
 $$;
 
@@ -223,28 +286,34 @@ alter table public.options enable row level security;
 alter table public.keywords enable row level security;
 alter table public.user_question_progress enable row level security;
 alter table public.admin_users enable row level security;
+alter table public.quiz_set_shares enable row level security;
 
 drop policy if exists "Public quiz sets are readable" on public.quiz_sets;
+drop policy if exists "Readable quiz sets follow visibility and shares" on public.quiz_sets;
 drop policy if exists "Public quiz sets are writable" on public.quiz_sets;
 drop policy if exists "Creators and admins can insert quiz sets" on public.quiz_sets;
 drop policy if exists "Creators and admins can update quiz sets" on public.quiz_sets;
 drop policy if exists "Creators and admins can delete quiz sets" on public.quiz_sets;
 drop policy if exists "Public questions are readable" on public.questions;
+drop policy if exists "Readable questions follow quiz set access" on public.questions;
 drop policy if exists "Public questions are writable" on public.questions;
 drop policy if exists "Authenticated users can insert questions" on public.questions;
 drop policy if exists "Creators and admins can update questions" on public.questions;
 drop policy if exists "Creators and admins can delete questions" on public.questions;
 drop policy if exists "Public set questions are readable" on public.quiz_set_questions;
+drop policy if exists "Readable set questions follow quiz set access" on public.quiz_set_questions;
 drop policy if exists "Public set questions are writable" on public.quiz_set_questions;
 drop policy if exists "Creators and admins can insert set questions" on public.quiz_set_questions;
 drop policy if exists "Creators and admins can update set questions" on public.quiz_set_questions;
 drop policy if exists "Creators and admins can delete set questions" on public.quiz_set_questions;
 drop policy if exists "Public options are readable" on public.options;
+drop policy if exists "Readable options follow quiz set access" on public.options;
 drop policy if exists "Public options are writable" on public.options;
 drop policy if exists "Creators and admins can insert options" on public.options;
 drop policy if exists "Creators and admins can update options" on public.options;
 drop policy if exists "Creators and admins can delete options" on public.options;
 drop policy if exists "Public keywords are readable" on public.keywords;
+drop policy if exists "Readable keywords follow quiz set access" on public.keywords;
 drop policy if exists "Public keywords are writable" on public.keywords;
 drop policy if exists "Creators and admins can insert keywords" on public.keywords;
 drop policy if exists "Creators and admins can update keywords" on public.keywords;
@@ -253,8 +322,10 @@ drop policy if exists "Users can read own progress" on public.user_question_prog
 drop policy if exists "Users can write own progress" on public.user_question_progress;
 drop policy if exists "Admins can read admin users" on public.admin_users;
 drop policy if exists "Admins can write admin users" on public.admin_users;
+drop policy if exists "Users can read relevant quiz set shares" on public.quiz_set_shares;
+drop policy if exists "Creators and admins can manage quiz set shares" on public.quiz_set_shares;
 
-create policy "Public quiz sets are readable" on public.quiz_sets for select to anon, authenticated using (true);
+create policy "Readable quiz sets follow visibility and shares" on public.quiz_sets for select to anon, authenticated using (public.can_read_set(id));
 
 create policy "Creators and admins can insert quiz sets"
 on public.quiz_sets for insert
@@ -272,22 +343,22 @@ on public.quiz_sets for delete
 to authenticated
 using (created_by = auth.uid() or public.is_admin());
 
-create policy "Public questions are readable" on public.questions for select to anon, authenticated using (true);
+create policy "Readable questions follow quiz set access" on public.questions for select to anon, authenticated using (public.can_read_question(id));
 create policy "Authenticated users can insert questions" on public.questions for insert to authenticated with check (true);
 create policy "Creators and admins can update questions" on public.questions for update to authenticated using (public.can_manage_question(id)) with check (public.can_manage_question(id));
 create policy "Creators and admins can delete questions" on public.questions for delete to authenticated using (public.can_manage_question(id));
 
-create policy "Public set questions are readable" on public.quiz_set_questions for select to anon, authenticated using (true);
+create policy "Readable set questions follow quiz set access" on public.quiz_set_questions for select to anon, authenticated using (public.can_read_set(set_id));
 create policy "Creators and admins can insert set questions" on public.quiz_set_questions for insert to authenticated with check (public.can_manage_set(set_id));
 create policy "Creators and admins can update set questions" on public.quiz_set_questions for update to authenticated using (public.can_manage_set(set_id)) with check (public.can_manage_set(set_id));
 create policy "Creators and admins can delete set questions" on public.quiz_set_questions for delete to authenticated using (public.can_manage_set(set_id));
 
-create policy "Public options are readable" on public.options for select to anon, authenticated using (true);
+create policy "Readable options follow quiz set access" on public.options for select to anon, authenticated using (public.can_read_question(question_id));
 create policy "Creators and admins can insert options" on public.options for insert to authenticated with check (public.can_manage_question(question_id));
 create policy "Creators and admins can update options" on public.options for update to authenticated using (public.can_manage_question(question_id)) with check (public.can_manage_question(question_id));
 create policy "Creators and admins can delete options" on public.options for delete to authenticated using (public.can_manage_question(question_id));
 
-create policy "Public keywords are readable" on public.keywords for select to anon, authenticated using (true);
+create policy "Readable keywords follow quiz set access" on public.keywords for select to anon, authenticated using (public.can_read_question(question_id));
 create policy "Creators and admins can insert keywords" on public.keywords for insert to authenticated with check (public.can_manage_question(question_id));
 create policy "Creators and admins can update keywords" on public.keywords for update to authenticated using (public.can_manage_question(question_id)) with check (public.can_manage_question(question_id));
 create policy "Creators and admins can delete keywords" on public.keywords for delete to authenticated using (public.can_manage_question(question_id));
@@ -313,3 +384,18 @@ on public.admin_users for all
 to authenticated
 using (public.is_admin())
 with check (public.is_admin());
+
+create policy "Users can read relevant quiz set shares"
+on public.quiz_set_shares for select
+to authenticated
+using (
+  public.can_manage_set(set_id)
+  or shared_with_user_id = auth.uid()
+  or lower(coalesce(shared_with_email, '')) = lower(coalesce(auth.jwt()->>'email', ''))
+);
+
+create policy "Creators and admins can manage quiz set shares"
+on public.quiz_set_shares for all
+to authenticated
+using (public.can_manage_set(set_id))
+with check (public.can_manage_set(set_id));

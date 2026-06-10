@@ -8,6 +8,7 @@ export type QuizSet = {
   updatedAt: string;
   createdBy?: string;
   createdByEmail?: string;
+  visibility?: "private" | "shared" | "public";
 };
 
 export type Question = {
