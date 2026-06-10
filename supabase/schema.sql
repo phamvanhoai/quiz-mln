@@ -81,6 +81,14 @@ create unique index if not exists quiz_set_shares_set_email_idx
 on public.quiz_set_shares(set_id, lower(shared_with_email))
 where shared_with_email is not null;
 
+create index if not exists quiz_set_shares_user_idx
+on public.quiz_set_shares(shared_with_user_id)
+where shared_with_user_id is not null;
+
+create index if not exists quiz_set_shares_email_idx
+on public.quiz_set_shares(lower(shared_with_email))
+where shared_with_email is not null;
+
 create or replace function public.is_admin()
 returns boolean
 language sql
@@ -192,6 +200,15 @@ $$;
 
 create index if not exists quiz_set_questions_set_id_position_idx
 on public.quiz_set_questions(set_id, position);
+
+create index if not exists quiz_set_questions_question_id_idx
+on public.quiz_set_questions(question_id);
+
+create index if not exists quiz_sets_created_by_idx
+on public.quiz_sets(created_by);
+
+create index if not exists quiz_sets_visibility_idx
+on public.quiz_sets(visibility);
 
 create index if not exists options_question_id_position_idx
 on public.options(question_id, position);
