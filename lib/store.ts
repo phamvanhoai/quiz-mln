@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ProgressMap, Question, QuizSet } from "@/lib/types";
-import { sampleSet } from "@/lib/sample";
 import { readSettings } from "@/lib/settings";
 import { nowIso, uid } from "@/lib/utils";
 import { createClient, hasSupabaseConfig } from "@/utils/supabase/client";
@@ -208,58 +207,8 @@ async function saveSetsToCloud(supabase: NonNullable<ReturnType<typeof createCli
   }
 }
 
-function readJson<T>(key: string, fallback: T): T {
-  if (typeof window === "undefined") return fallback;
-  try {
-    const raw = window.localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeJson<T>(key: string, value: T) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(key, JSON.stringify(value));
-}
-
 function persistSets(sets: QuizSet[]) {
-  writeJson(setsKey, sets);
   return sets;
-}
-
-function chooseBetterSet(current: QuizSet | undefined, incoming: QuizSet) {
-  if (!current) return incoming;
-  if (current.questions.length > incoming.questions.length) return current;
-  if (incoming.questions.length > current.questions.length) return incoming;
-  return new Date(incoming.updatedAt).getTime() >= new Date(current.updatedAt).getTime() ? incoming : current;
-}
-
-function mergeSets(localSets: QuizSet[], cloudSets: QuizSet[]) {
-  const merged = new Map<string, QuizSet>();
-  const localSource = cloudSets.length ? localSets.filter((set) => set.id !== sampleSetId) : localSets;
-
-  for (const set of cloudSets) {
-    merged.set(set.id, set);
-  }
-  for (const set of localSource) {
-    merged.set(set.id, chooseBetterSet(merged.get(set.id), set));
-  }
-
-  const result = Array.from(merged.values()).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-  return result.length ? result : [sampleSet];
-}
-
-function cleanupEmptyDuplicateSets(items: QuizSet[]) {
-  const seenEmptyTitles = new Set<string>();
-  return items.filter((set) => {
-    if (set.id === sampleSetId) return items.length === 1;
-    if (set.questions.length > 0) return true;
-    const key = set.title.trim().toLowerCase();
-    if (seenEmptyTitles.has(key)) return false;
-    seenEmptyTitles.add(key);
-    return true;
-  });
 }
 
 export function useQuizStore() {
@@ -276,13 +225,14 @@ export function useQuizStore() {
   const [dark, setDark] = useState(false);
 
   useEffect(() => {
-    const savedSets = cleanupEmptyDuplicateSets(readJson<QuizSet[]>(setsKey, []));
     const settings = readSettings();
     const config = { url: settings.supabaseUrl, key: settings.supabasePublishableKey };
     setCloudConfig(config);
     setCloudEnabled(hasSupabaseConfig(config));
-    setSets(savedSets.length ? savedSets : [sampleSet]);
-    setProgress(readJson<ProgressMap>(progressKey, {}));
+    setSets([]);
+    setProgress({});
+    window.localStorage.removeItem(setsKey);
+    window.localStorage.removeItem(progressKey);
     const savedTheme = window.localStorage.getItem(themeKey);
     const enabled = savedTheme ? savedTheme === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
     setDark(enabled);
@@ -305,6 +255,7 @@ export function useQuizStore() {
 
   useEffect(() => {
     if (!loaded || !cloudEnabled) {
+      setSets([]);
       setCloudReady(true);
       return;
     }
@@ -350,9 +301,7 @@ export function useQuizStore() {
       }
 
       const cloudSets = ((data ?? []) as unknown as CloudQuizSetRow[]).map(fromCloudSet);
-      if (cloudSets.length) {
-        setSets((current) => persistSets(mergeSets(current, cloudSets)));
-      }
+      setSets(cloudSets);
       setCloudReady(true);
     }
 
@@ -361,10 +310,6 @@ export function useQuizStore() {
       cancelled = true;
     };
   }, [cloudConfig, cloudEnabled, loaded]);
-
-  useEffect(() => {
-    if (loaded) writeJson(setsKey, sets);
-  }, [loaded, sets]);
 
   useEffect(() => {
     if (!loaded || !cloudReady || !cloudEnabled || !sets.length || !userId) return;
@@ -384,21 +329,21 @@ export function useQuizStore() {
   }, [cloudConfig, cloudEnabled, cloudReady, loaded, sets, userEmail, userId]);
 
   useEffect(() => {
-    if (loaded) writeJson(progressKey, progress);
-  }, [loaded, progress]);
-
-  useEffect(() => {
+    setProgressCloudReady(false);
     if (!loaded || !cloudEnabled || !userId) {
+      setProgress({});
       setProgressCloudReady(true);
       return;
     }
     const supabase = createClient(cloudConfig);
     if (!supabase) {
+      setProgress({});
       setProgressCloudReady(true);
       return;
     }
 
     let cancelled = false;
+    setProgress({});
     supabase
       .from("user_question_progress")
       .select("user_id, question_id, learned, starred, wrong_count, correct_streak, updated_at")
@@ -418,7 +363,7 @@ export function useQuizStore() {
             correctStreak: row.correct_streak
           };
         }
-        setProgress((current) => ({ ...current, ...cloudProgress }));
+        setProgress(cloudProgress);
         setProgressCloudReady(true);
       });
 
