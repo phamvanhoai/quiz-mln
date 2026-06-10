@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { AppShell, PageTitle } from "@/components/AppShell";
 import { AnswerButton, QuestionResult, QuestionText } from "@/components/QuestionView";
+import { getCorrectOptionIds, isCorrectSelection, isMultiAnswer } from "@/lib/quiz";
 import { useQuizStore } from "@/lib/store";
 import { cn, percent } from "@/lib/utils";
 
@@ -13,10 +14,12 @@ export default function StudyPage() {
   const store = useQuizStore();
   const set = useMemo(() => store.sets.find((item) => item.id === setId), [setId, store.sets]);
   const [index, setIndex] = useState(0);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [checked, setChecked] = useState(false);
   const [showKeywords, setShowKeywords] = useState(true);
   const question = set?.questions[index];
-  const correct = question && selected ? selected === question.correctOptionId : false;
+  const multi = question ? isMultiAnswer(question) : false;
+  const correct = question ? isCorrectSelection(question, selectedIds) : false;
 
   const stats = useMemo(() => {
     const questions = set?.questions ?? [];
@@ -28,19 +31,31 @@ export default function StudyPage() {
   }, [set?.questions, store.progress]);
 
   function choose(optionId: string) {
-    if (!question || selected) return;
-    setSelected(optionId);
-    store.markAnswer(question.id, optionId === question.correctOptionId);
+    if (!question || checked) return;
+    if (multi) {
+      setSelectedIds((items) => (items.includes(optionId) ? items.filter((id) => id !== optionId) : [...items, optionId]));
+      return;
+    }
+    setSelectedIds([optionId]);
+    setChecked(true);
+    store.markAnswer(question.id, isCorrectSelection(question, [optionId]));
+  }
+
+  function checkAnswer() {
+    if (!question || !selectedIds.length) return;
+    setChecked(true);
+    store.markAnswer(question.id, isCorrectSelection(question, selectedIds));
   }
 
   function go(next: number) {
     setIndex(next);
-    setSelected(null);
+    setSelectedIds([]);
+    setChecked(false);
   }
 
   return (
     <AppShell dark={store.dark} onToggleDark={store.toggleDark}>
-      <PageTitle title={set?.title ?? "Ôn tập"} description="Chọn đáp án để xem đúng/sai ngay, lưu câu đã học, câu sai và câu đánh dấu sao." />
+      <PageTitle title={set?.title ?? "Ôn tập"} description="Chọn đáp án để xem đúng/sai ngay. Câu nhiều đáp án có thể chọn nhiều ô rồi bấm kiểm tra." />
       {!set || !question ? (
         <Link href="/sets" className="text-blue-600 dark:text-blue-400">
           Quay lại bộ đề
@@ -55,6 +70,7 @@ export default function StudyPage() {
                 </div>
                 <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
                   Đã học {stats.learned} · Câu sai {stats.wrong} · Đánh sao {stats.starred}
+                  {multi ? " · Nhiều đáp án" : ""}
                 </div>
               </div>
               <div className="flex gap-2">
@@ -77,18 +93,28 @@ export default function StudyPage() {
 
             <div className="mt-6 grid gap-3">
               {question.options.map((option) => {
-                const state = !selected
-                  ? "neutral"
-                  : option.id === question.correctOptionId
+                const correctIds = getCorrectOptionIds(question);
+                const selected = selectedIds.includes(option.id);
+                const state = !checked
+                  ? selected
+                    ? "selected"
+                    : "neutral"
+                  : correctIds.includes(option.id)
                     ? "correct"
-                    : option.id === selected
+                    : selected
                       ? "wrong"
                       : "neutral";
-                return <AnswerButton disabled={Boolean(selected)} key={option.id} label={option.label} onClick={() => choose(option.id)} state={state} text={option.text} />;
+                return <AnswerButton disabled={checked} key={option.id} label={option.label} onClick={() => choose(option.id)} state={state} text={option.text} />;
               })}
             </div>
 
-            {selected ? (
+            {multi && !checked ? (
+              <button className="btn-primary mt-4" disabled={!selectedIds.length} onClick={checkAnswer} type="button">
+                Kiểm tra đáp án
+              </button>
+            ) : null}
+
+            {checked ? (
               <div className="mt-4">
                 <QuestionResult correct={correct} explanation={question.explanation} />
               </div>

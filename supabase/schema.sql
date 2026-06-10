@@ -18,6 +18,7 @@ create table if not exists public.questions (
   id text primary key,
   question_text text not null,
   correct_option_id text not null,
+  correct_option_ids text[] not null default '{}',
   explanation text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -30,10 +31,15 @@ create table if not exists public.quiz_set_questions (
   primary key (set_id, question_id)
 );
 
+alter table public.questions add column if not exists correct_option_ids text[] not null default '{}';
+update public.questions
+set correct_option_ids = array[correct_option_id]
+where cardinality(correct_option_ids) = 0;
+
 create table if not exists public.options (
   id text primary key,
   question_id text not null references public.questions(id) on delete cascade,
-  label text not null check (label in ('A', 'B', 'C', 'D')),
+  label text not null check (label in ('A', 'B', 'C', 'D', 'E', 'F')),
   text text not null,
   position integer not null default 0
 );
@@ -45,6 +51,9 @@ create table if not exists public.keywords (
   start_index integer,
   end_index integer
 );
+
+alter table public.options drop constraint if exists options_label_check;
+alter table public.options add constraint options_label_check check (label in ('A', 'B', 'C', 'D', 'E', 'F'));
 
 create table if not exists public.user_question_progress (
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -231,11 +240,12 @@ begin
       and table_name = 'quiz_sets'
       and column_name = 'questions'
   ) then
-    insert into public.questions (id, question_text, correct_option_id, explanation, created_at, updated_at)
+    insert into public.questions (id, question_text, correct_option_id, correct_option_ids, explanation, created_at, updated_at)
     select
       question_item.value->>'id',
       question_item.value->>'questionText',
       question_item.value->>'correctOptionId',
+      array[question_item.value->>'correctOptionId'],
       nullif(question_item.value->>'explanation', ''),
       quiz_sets.created_at,
       quiz_sets.updated_at
@@ -245,6 +255,7 @@ begin
     on conflict (id) do update set
       question_text = excluded.question_text,
       correct_option_id = excluded.correct_option_id,
+      correct_option_ids = excluded.correct_option_ids,
       explanation = excluded.explanation,
       updated_at = excluded.updated_at;
 

@@ -2,19 +2,21 @@
 
 import { useRef, useState } from "react";
 import type { OptionLabel, Question } from "@/lib/types";
-import { addKeyword, emptyOption } from "@/lib/quiz";
+import { addKeyword, emptyOption, getCorrectOptionIds } from "@/lib/quiz";
 import { uid } from "@/lib/utils";
 
-const labels: OptionLabel[] = ["A", "B", "C", "D"];
+const defaultLabels: OptionLabel[] = ["A", "B", "C", "D"];
+const allLabels: OptionLabel[] = ["A", "B", "C", "D", "E", "F"];
 
 export function createBlankQuestion(): Question {
-  const options = labels.map((label) => emptyOption(label));
+  const options = defaultLabels.map((label) => emptyOption(label));
   return {
     id: uid("question"),
     questionText: "",
     keywords: [],
     options,
     correctOptionId: options[0].id,
+    correctOptionIds: [options[0].id],
     explanation: ""
   };
 }
@@ -32,6 +34,7 @@ export function QuestionEditor({
 }) {
   const textRef = useRef<HTMLTextAreaElement>(null);
   const [message, setMessage] = useState("");
+  const correctIds = getCorrectOptionIds(question);
 
   function markKeyword() {
     const el = textRef.current;
@@ -41,6 +44,29 @@ export function QuestionEditor({
     }
     onChange(addKeyword(question, el.selectionStart, el.selectionEnd));
     setMessage("Đã đánh dấu keyword.");
+  }
+
+  function toggleCorrect(optionId: string) {
+    const next = correctIds.includes(optionId)
+      ? correctIds.filter((id) => id !== optionId)
+      : [...correctIds, optionId];
+    const safeNext = next.length ? next : [optionId];
+    onChange({ ...question, correctOptionId: safeNext[0], correctOptionIds: safeNext });
+  }
+
+  function addOption() {
+    const used = new Set(question.options.map((option) => option.label));
+    const nextLabel = allLabels.find((label) => !used.has(label));
+    if (!nextLabel) return;
+    onChange({ ...question, options: [...question.options, emptyOption(nextLabel)] });
+  }
+
+  function deleteOption(optionId: string) {
+    if (question.options.length <= 2) return;
+    const nextOptions = question.options.filter((option) => option.id !== optionId);
+    const nextCorrect = correctIds.filter((id) => id !== optionId);
+    const safeCorrect = nextCorrect.length ? nextCorrect : [nextOptions[0].id];
+    onChange({ ...question, options: nextOptions, correctOptionId: safeCorrect[0], correctOptionIds: safeCorrect });
   }
 
   return (
@@ -71,17 +97,25 @@ export function QuestionEditor({
           {message ? <span className="text-sm text-zinc-500">{message}</span> : null}
         </div>
       ) : null}
-      <div className="mt-4 grid gap-3">
+      <div className="mt-4 flex items-center justify-between gap-3">
+        <div className="text-sm font-medium">Đáp án đúng: tick một hoặc nhiều ô</div>
+        {!readOnly && question.options.length < allLabels.length ? (
+          <button className="focus-ring rounded-md border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700" onClick={addOption} type="button">
+            Thêm đáp án
+          </button>
+        ) : null}
+      </div>
+      <div className="mt-3 grid gap-3">
         {question.options.map((option) => (
           <label className="grid gap-1" key={option.id}>
             <span className="text-sm font-medium">Đáp án {option.label}</span>
             <div className="flex gap-2">
               <input
-                checked={question.correctOptionId === option.id}
+                checked={correctIds.includes(option.id)}
                 disabled={readOnly}
-                name={`correct-${question.id}`}
-                onChange={() => onChange({ ...question, correctOptionId: option.id })}
-                type="radio"
+                onChange={() => toggleCorrect(option.id)}
+                title="Đáp án đúng"
+                type="checkbox"
               />
               <input
                 className="focus-ring w-full rounded-md border border-zinc-300 bg-transparent px-3 py-2 disabled:cursor-not-allowed disabled:opacity-70 dark:border-zinc-700"
@@ -94,6 +128,11 @@ export function QuestionEditor({
                 }
                 value={option.text}
               />
+              {!readOnly && question.options.length > 2 ? (
+                <button className="focus-ring rounded-md border border-red-300 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:text-red-300" onClick={() => deleteOption(option.id)} type="button">
+                  Xóa
+                </button>
+              ) : null}
             </div>
           </label>
         ))}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { ProgressMap, Question, QuizSet } from "@/lib/types";
+import type { OptionLabel, ProgressMap, Question, QuizSet } from "@/lib/types";
 import { readSettings } from "@/lib/settings";
 import { nowIso, uid } from "@/lib/utils";
 import { createClient, hasSupabaseConfig } from "@/utils/supabase/client";
@@ -30,7 +30,7 @@ type CloudKeywordRow = {
 
 type CloudOptionRow = {
   id: string;
-  label: "A" | "B" | "C" | "D";
+  label: OptionLabel;
   text: string;
   position: number;
 };
@@ -39,6 +39,7 @@ type CloudQuestionRow = {
   id: string;
   question_text: string;
   correct_option_id: string;
+  correct_option_ids: string[] | null;
   explanation: string | null;
   options: CloudOptionRow[];
   keywords: CloudKeywordRow[];
@@ -96,6 +97,7 @@ function fromCloudSet(row: CloudQuizSetRow): QuizSet {
       id: question.id,
       questionText: question.question_text,
       correctOptionId: question.correct_option_id,
+      correctOptionIds: question.correct_option_ids?.length ? question.correct_option_ids : [question.correct_option_id],
       explanation: question.explanation ?? undefined,
       options: (question.options ?? [])
         .slice()
@@ -146,6 +148,7 @@ async function saveSetsToCloud(supabase: NonNullable<ReturnType<typeof createCli
     id: question.id,
     question_text: question.questionText,
     correct_option_id: question.correctOptionId,
+    correct_option_ids: question.correctOptionIds?.length ? question.correctOptionIds : [question.correctOptionId],
     explanation: question.explanation ?? null,
     updated_at: nowIso()
   }));
@@ -290,6 +293,7 @@ export function useQuizStore() {
               id,
               question_text,
               correct_option_id,
+              correct_option_ids,
               explanation,
               options (id, label, text, position),
               keywords (id, text, start_index, end_index)

@@ -16,11 +16,20 @@ type AiQuestion = {
   questionText?: string;
   keywords?: string[];
   options?: Partial<Record<OptionLabel, string>>;
-  correctAnswer?: OptionLabel;
+  correctAnswer?: string;
   explanation?: string;
 };
 
-const labels: OptionLabel[] = ["A", "B", "C", "D"];
+const labels: OptionLabel[] = ["A", "B", "C", "D", "E", "F"];
+
+function parseCorrectLabels(value?: string): OptionLabel[] {
+  const parsed = (value ?? "")
+    .toUpperCase()
+    .replace(/[^A-F]/g, "")
+    .split("")
+    .filter((label): label is OptionLabel => labels.includes(label as OptionLabel));
+  return Array.from(new Set(parsed));
+}
 
 function extractJson(text: string) {
   const trimmed = text.trim();
@@ -63,14 +72,20 @@ function extractJson(text: string) {
 
 function normalizeQuestions(items: AiQuestion[]): Question[] {
   return items
-    .filter((item) => item.questionText && item.options && item.correctAnswer)
+    .filter((item) => item.questionText && item.options && parseCorrectLabels(item.correctAnswer).length)
     .map((item) => {
-      const options = labels.map((label) => ({
+      const highestOption = Math.max(3, ...labels.map((label, index) => (item.options?.[label] ? index : -1)));
+      const usedLabels = labels.slice(0, highestOption + 1);
+      const options = usedLabels.map((label) => ({
         id: uid("option"),
         label,
         text: item.options?.[label]?.trim() ?? ""
       }));
-      const correct = options.find((option) => option.label === item.correctAnswer) ?? options[0];
+      const correctLabels = parseCorrectLabels(item.correctAnswer);
+      const correctOptions = correctLabels
+        .map((label) => options.find((option) => option.label === label))
+        .filter((option): option is (typeof options)[number] => Boolean(option));
+      const correct = correctOptions[0] ?? options[0];
       const questionText = item.questionText?.trim() ?? "";
       const keywords = (item.keywords ?? [])
         .map((keyword) => keyword.trim())
@@ -91,6 +106,7 @@ function normalizeQuestions(items: AiQuestion[]): Question[] {
         keywords,
         options,
         correctOptionId: correct.id,
+        correctOptionIds: correctOptions.length ? correctOptions.map((option) => option.id) : [correct.id],
         explanation: item.explanation?.trim() || undefined
       };
     });
@@ -121,9 +137,9 @@ function buildPrompt(text: string, index: number, total: number) {
 
 Yêu cầu:
 - Tách câu hỏi dù có hoặc không có số thứ tự.
-- Nhận diện đáp án A, B, C, D kể cả khi bị dính dòng.
-- Nhận diện đáp án đúng nếu có dòng A/B/C/D đứng riêng hoặc "Đáp án: A".
-- Nếu câu bị cắt mất đầu/cuối do chia phần và không đủ A/B/C/D hoặc không có đáp án đúng, bỏ qua câu đó.
+- Nhận diện đáp án A, B, C, D và cả E, F nếu có, kể cả khi bị dính dòng.
+- Nhận diện đáp án đúng nếu có dòng A/B/C/D/E/F đứng riêng hoặc "Đáp án: A".
+- Nếu câu bị cắt mất đầu/cuối do chia phần và không đủ các đáp án xuất hiện trong câu hoặc không có đáp án đúng, bỏ qua câu đó.
 - Giữ nguyên tiếng Việt.
 - Keywords để [] nếu không chắc.
 - Không bịa câu hỏi, không bịa đáp án đúng.
@@ -135,8 +151,8 @@ Schema JSON:
     {
       "questionText": "string",
       "keywords": ["string"],
-      "options": { "A": "string", "B": "string", "C": "string", "D": "string" },
-      "correctAnswer": "A|B|C|D",
+      "options": { "A": "string", "B": "string", "C": "string", "D": "string", "E": "string optional", "F": "string optional" },
+      "correctAnswer": "A|B|C|D|E|F hoặc nhiều đáp án như BC/BCD/ABEF",
       "explanation": "string optional"
     }
   ]

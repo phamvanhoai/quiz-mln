@@ -15,6 +15,7 @@ export const sampleSet: QuizSet = {
       questionText: "Xanh-ximông là đại biểu của trường phái nào?",
       keywords: [{ id: uid("keyword"), text: "Xanh-ximông", startIndex: 0, endIndex: 11 }],
       correctOptionId: aId,
+      correctOptionIds: [aId],
       options: [
         { id: aId, label: "A", text: "Chủ nghĩa xã hội không tưởng Pháp" },
         { id: uid("option"), label: "B", text: "Chủ nghĩa xã hội không tưởng Đức" },

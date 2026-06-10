@@ -1,4 +1,4 @@
-export type OptionLabel = "A" | "B" | "C" | "D";
+export type OptionLabel = "A" | "B" | "C" | "D" | "E" | "F";
 
 export type QuizSet = {
   id: string;
@@ -17,6 +17,7 @@ export type Question = {
   keywords: Keyword[];
   options: Option[];
   correctOptionId: string;
+  correctOptionIds?: string[];
   explanation?: string;
 };
 

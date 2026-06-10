@@ -3734,3 +3734,4 @@ A Chất
 B. Lượng
 C. Độ
 D. Điểm nút
+C

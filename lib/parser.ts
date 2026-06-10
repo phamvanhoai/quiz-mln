@@ -1,16 +1,16 @@
 import type { Option, OptionLabel, ParseResult, Question } from "@/lib/types";
 import { uid } from "@/lib/utils";
 
-const optionLabels: OptionLabel[] = ["A", "B", "C", "D"];
-const optionLine = /^([A-D])[\.\)]\s*(.+)$/i;
+const optionLabels: OptionLabel[] = ["A", "B", "C", "D", "E", "F"];
+const optionLine = /^([A-F])[\.\)]\s*(.+)$/i;
 const questionStart = /^(\d+)[\.\)]\s*(.+)$/;
-const answerOnly = /^(?:Đáp\s*án\s*:?\s*)?([A-D])$/i;
+const answerOnly = /^(?:Đáp\s*án\s*:?\s*)?([A-F]{1,6})$/i;
 
 type CurrentQuestion = {
   number: string;
   question: string[];
-  options: Record<OptionLabel, string>;
-  answer?: OptionLabel;
+  options: Partial<Record<OptionLabel, string>>;
+  answers: OptionLabel[];
 };
 
 function normalize(text: string) {
@@ -22,12 +22,26 @@ function normalize(text: string) {
     .trim();
 }
 
-function makeOptions(raw: Record<OptionLabel, string>): Option[] {
-  return optionLabels.map((label) => ({
+function expectedLabels(raw: Partial<Record<OptionLabel, string>>) {
+  const highest = Math.max(3, ...optionLabels.map((label, index) => (raw[label] ? index : -1)));
+  return optionLabels.slice(0, highest + 1);
+}
+
+function makeOptions(raw: Partial<Record<OptionLabel, string>>): Option[] {
+  return expectedLabels(raw).map((label) => ({
     id: uid("option"),
     label,
     text: raw[label]?.trim() ?? ""
   }));
+}
+
+function parseAnswerLabels(value: string): OptionLabel[] {
+  const labels = value
+    .toUpperCase()
+    .replace(/[^A-F]/g, "")
+    .split("")
+    .filter((label): label is OptionLabel => optionLabels.includes(label as OptionLabel));
+  return Array.from(new Set(labels));
 }
 
 function pushQuestion(blocks: Question[], errors: string[], current: CurrentQuestion | null) {
@@ -40,16 +54,20 @@ function pushQuestion(blocks: Question[], errors: string[], current: CurrentQues
   if (missing.length) {
     errors.push(`Câu ${current.number}: thiếu đáp án ${missing.join(", ")}.`);
   }
-  if (!current.answer) {
+  if (!current.answers.length) {
     errors.push(`Câu ${current.number}: chưa nhận diện được đáp án đúng.`);
   }
-  const correct = options.find((option) => option.label === current.answer) ?? options[0];
+  const correctOptions = current.answers
+    .map((label) => options.find((option) => option.label === label))
+    .filter((option): option is Option => Boolean(option));
+  const fallback = correctOptions[0] ?? options[0];
   blocks.push({
     id: uid("question"),
     questionText,
     keywords: [],
     options,
-    correctOptionId: correct.id
+    correctOptionId: fallback.id,
+    correctOptionIds: correctOptions.length ? correctOptions.map((option) => option.id) : [fallback.id]
   });
 }
 
@@ -72,7 +90,8 @@ export function parseQuizTextWithErrors(text: string): ParseResult {
     return {
       number: number ?? `không đánh số ${autoNumber++}`,
       question: [firstLine],
-      options: { A: "", B: "", C: "", D: "" }
+      options: {},
+      answers: []
     };
   }
 
@@ -103,14 +122,18 @@ export function parseQuizTextWithErrors(text: string): ParseResult {
     }
 
     const answer = line.match(answerOnly);
-    if (answer && optionLabels.includes(answer[1].toUpperCase() as OptionLabel)) {
-      current.answer = answer[1].toUpperCase() as OptionLabel;
-      activeOption = null;
-      continue;
+    if (answer) {
+      const labels = parseAnswerLabels(answer[1]);
+      if (labels.length) {
+        current.answers = labels;
+        activeOption = null;
+        continue;
+      }
     }
 
-    const hasAllOptions = optionLabels.every((label) => Boolean(current?.options[label]));
-    if (current.answer && hasAllOptions) {
+    const labelsToCheck = current ? expectedLabels(current.options) : optionLabels.slice(0, 4);
+    const hasAllOptions = labelsToCheck.every((label) => Boolean(current?.options[label]));
+    if (current.answers.length && hasAllOptions) {
       pushQuestion(questions, errors, current);
       current = makeQuestion(line);
       activeOption = null;
@@ -126,7 +149,7 @@ export function parseQuizTextWithErrors(text: string): ParseResult {
 
   pushQuestion(questions, errors, current);
   if (!questions.length) {
-    errors.push("Không tìm thấy câu hỏi. Hãy kiểm tra định dạng nội dung câu, đáp án A-D và dòng đáp án đúng.");
+    errors.push("Không tìm thấy câu hỏi. Hãy kiểm tra định dạng nội dung câu, đáp án A-F và dòng đáp án đúng.");
   }
   return { questions, errors };
 }

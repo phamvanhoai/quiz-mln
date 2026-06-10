@@ -36,11 +36,25 @@ export function prepareExamQuestions(questions: Question[], count: number, rando
   return selected.map((question) => {
     if (!randomOptions) return question;
     const options = shuffle(question.options);
-    const correct = options.find((option) => option.id === question.correctOptionId);
-    return { ...question, options, correctOptionId: correct?.id ?? question.correctOptionId };
+    return { ...question, options };
   });
 }
 
 export function emptyOption(label: Option["label"]): Option {
   return { id: uid("option"), label, text: "" };
+}
+
+export function getCorrectOptionIds(question: Question) {
+  const ids = question.correctOptionIds?.length ? question.correctOptionIds : [question.correctOptionId];
+  return Array.from(new Set(ids.filter(Boolean)));
+}
+
+export function isMultiAnswer(question: Question) {
+  return getCorrectOptionIds(question).length > 1;
+}
+
+export function isCorrectSelection(question: Question, selectedIds: string[]) {
+  const correct = getCorrectOptionIds(question).slice().sort();
+  const selected = Array.from(new Set(selectedIds)).sort();
+  return correct.length === selected.length && correct.every((id, index) => id === selected[index]);
 }

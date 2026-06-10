@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { AppShell, PageTitle } from "@/components/AppShell";
 import { AnswerButton, QuestionText } from "@/components/QuestionView";
+import { isCorrectSelection, isMultiAnswer } from "@/lib/quiz";
 import { prepareExamQuestions } from "@/lib/quiz";
 import { useQuizStore } from "@/lib/store";
 import type { Question } from "@/lib/types";
@@ -22,7 +23,7 @@ export default function ExamPage() {
   const [minutes, setMinutes] = useState(15);
   const [exam, setExam] = useState<Question[]>([]);
   const [index, setIndex] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [answers, setAnswers] = useState<Record<string, string[]>>({});
   const [submitted, setSubmitted] = useState(false);
   const [remaining, setRemaining] = useState(0);
 
@@ -50,19 +51,30 @@ export default function ExamPage() {
     setRemaining(minutes * 60);
   }
 
+  function choose(question: Question, optionId: string) {
+    setAnswers((items) => {
+      const current = items[question.id] ?? [];
+      if (isMultiAnswer(question)) {
+        const next = current.includes(optionId) ? current.filter((id) => id !== optionId) : [...current, optionId];
+        return { ...items, [question.id]: next };
+      }
+      return { ...items, [question.id]: [optionId] };
+    });
+  }
+
   function submit() {
-    exam.forEach((question) => store.markAnswer(question.id, answers[question.id] === question.correctOptionId));
+    exam.forEach((question) => store.markAnswer(question.id, isCorrectSelection(question, answers[question.id] ?? [])));
     setSubmitted(true);
   }
 
-  const correct = exam.filter((question) => answers[question.id] === question.correctOptionId).length;
-  const wrongQuestions = exam.filter((question) => answers[question.id] && answers[question.id] !== question.correctOptionId);
+  const correct = exam.filter((question) => isCorrectSelection(question, answers[question.id] ?? [])).length;
+  const wrongQuestions = exam.filter((question) => (answers[question.id]?.length ?? 0) > 0 && !isCorrectSelection(question, answers[question.id] ?? []));
   const current = exam[index];
   const timeText = `${Math.floor(remaining / 60).toString().padStart(2, "0")}:${(remaining % 60).toString().padStart(2, "0")}`;
 
   return (
     <AppShell dark={store.dark} onToggleDark={store.toggleDark}>
-      <PageTitle title={set?.title ? `Thi thử: ${set.title}` : "Thi thử"} description="Làm bài không báo đúng/sai ngay. Sau khi nộp sẽ có điểm, tỷ lệ và danh sách câu sai." />
+      <PageTitle title={set?.title ? `Thi thử: ${set.title}` : "Thi thử"} description="Làm bài không báo đúng/sai ngay. Câu nhiều đáp án có thể chọn nhiều lựa chọn." />
       {!set ? <Link href="/sets" className="text-blue-600">Quay lại bộ đề</Link> : null}
       {set && !exam.length ? (
         <section className="panel max-w-xl p-5">
@@ -72,7 +84,7 @@ export default function ExamPage() {
           </label>
           <div className="mt-4 grid gap-3 text-sm">
             <Check checked={shuffleQuestions} label="Đảo thứ tự câu hỏi" onChange={setShuffleQuestions} />
-            <Check checked={shuffleOptions} label="Đảo vị trí đáp án A/B/C/D" onChange={setShuffleOptions} />
+            <Check checked={shuffleOptions} label="Đảo vị trí đáp án A-F" onChange={setShuffleOptions} />
             <Check checked={hideKeywords} label="Ẩn keyword" onChange={setHideKeywords} />
             <Check checked={timed} label="Bật thời gian làm bài" onChange={setTimed} />
           </div>
@@ -89,7 +101,10 @@ export default function ExamPage() {
         <section className="grid gap-5 lg:grid-cols-[1fr_260px]">
           <div className="panel p-5">
             <div className="mb-4 flex items-center justify-between">
-              <div className="text-sm text-zinc-500">Câu {index + 1}/{exam.length}</div>
+              <div className="text-sm text-zinc-500">
+                Câu {index + 1}/{exam.length}
+                {isMultiAnswer(current) ? " · Chọn nhiều đáp án" : ""}
+              </div>
               {timed ? <div className="rounded-md bg-zinc-100 px-3 py-1 font-mono dark:bg-zinc-800">{timeText}</div> : null}
             </div>
             <QuestionText question={current} showKeywords={!hideKeywords} />
@@ -98,8 +113,8 @@ export default function ExamPage() {
                 <AnswerButton
                   key={option.id}
                   label={option.label}
-                  onClick={() => setAnswers((items) => ({ ...items, [current.id]: option.id }))}
-                  state={answers[current.id] === option.id ? "selected" : "neutral"}
+                  onClick={() => choose(current, option.id)}
+                  state={(answers[current.id] ?? []).includes(option.id) ? "selected" : "neutral"}
                   text={option.text}
                 />
               ))}
@@ -113,7 +128,7 @@ export default function ExamPage() {
             <div className="mb-3 font-semibold">Điều hướng</div>
             <div className="grid grid-cols-5 gap-2">
               {exam.map((question, qIndex) => (
-                <button className={`focus-ring rounded-md border py-2 text-sm ${answers[question.id] ? "border-blue-500 bg-blue-50 dark:bg-blue-950" : "border-zinc-300 dark:border-zinc-700"} ${qIndex === index ? "ring-2 ring-blue-500" : ""}`} key={question.id} onClick={() => setIndex(qIndex)} type="button">
+                <button className={`focus-ring rounded-md border py-2 text-sm ${(answers[question.id]?.length ?? 0) ? "border-blue-500 bg-blue-50 dark:bg-blue-950" : "border-zinc-300 dark:border-zinc-700"} ${qIndex === index ? "ring-2 ring-blue-500" : ""}`} key={question.id} onClick={() => setIndex(qIndex)} type="button">
                   {qIndex + 1}
                 </button>
               ))}
