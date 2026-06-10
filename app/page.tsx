@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { AppShell, PageTitle } from "@/components/AppShell";
+import { AppShell } from "@/components/AppShell";
 import { useQuizStore } from "@/lib/store";
 import { percent } from "@/lib/utils";
 
@@ -10,21 +10,27 @@ export default function HomePage() {
   const total = store.sets.reduce((sum, set) => sum + set.questions.length, 0);
   const learned = store.allQuestions.filter(({ question }) => store.progress[question.id]?.learned).length;
   const wrong = store.allQuestions.filter(({ question }) => (store.progress[question.id]?.wrongCount ?? 0) > 0).length;
+  const firstSet = store.sets.find((set) => set.questions.length > 0);
 
   return (
     <AppShell dark={store.dark} onToggleDark={store.toggleDark}>
       <section className="mb-6 overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm shadow-zinc-200/80 dark:border-zinc-800 dark:bg-zinc-950 dark:shadow-none">
         <div className="border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
-          <div className="text-xs font-semibold uppercase tracking-widest text-zinc-500">Local study workspace</div>
+          <div className="text-xs font-semibold uppercase tracking-widest text-zinc-500">Study workspace</div>
         </div>
         <div className="grid gap-6 p-5 lg:grid-cols-[1fr_280px] lg:p-7">
           <div>
             <h1 className="max-w-3xl text-3xl font-bold tracking-tight sm:text-5xl">Ôn tập trắc nghiệm từ Word/PDF</h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-              Import tài liệu, chỉnh câu hỏi, luyện câu sai và thi thử ngay trên máy. Dữ liệu được lưu bằng localStorage, không cần backend.
+              Import tài liệu, chỉnh câu hỏi, luyện câu sai và thi thử. Dữ liệu có thể đồng bộ Supabase theo từng tài khoản.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
-              <Link className="btn-primary" href="/import">
+              {firstSet ? (
+                <Link className="btn-primary" href={`/study/${firstSet.id}`}>
+                  Bắt đầu học
+                </Link>
+              ) : null}
+              <Link className="btn-secondary" href="/import">
                 Import file
               </Link>
               <Link className="btn-secondary" href="/sets">
@@ -50,16 +56,23 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
       <section className="grid gap-4 sm:grid-cols-3">
         <Stat label="Bộ đề" value={store.sets.length} />
         <Stat label="Tổng câu" value={total} />
         <Stat label="Đã học" value={`${learned}/${total} (${percent(learned, total)}%)`} />
       </section>
+
       <section className="mt-6 grid gap-4 lg:grid-cols-2">
         <div className="panel p-5">
           <h2 className="font-semibold">Bắt đầu nhanh</h2>
           <div className="mt-4 flex flex-wrap gap-3">
-            <Link className="btn-primary" href="/import">
+            {firstSet ? (
+              <Link className="btn-primary" href={`/study/${firstSet.id}`}>
+                Học bộ đề gần nhất
+              </Link>
+            ) : null}
+            <Link className="btn-secondary" href="/import">
               Import file
             </Link>
             <Link className="btn-secondary" href="/sets">
@@ -70,15 +83,37 @@ export default function HomePage() {
             </Link>
           </div>
         </div>
+
         <div className="panel p-5">
-          <h2 className="font-semibold">Bộ đề gần đây</h2>
-          <div className="mt-3 grid gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="font-semibold">Bộ đề gần đây</h2>
+              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Chọn hành động rõ ràng để học hoặc thi thử.</p>
+            </div>
+            <Link className="text-sm font-medium text-blue-600 dark:text-blue-400" href="/sets">
+              Xem tất cả
+            </Link>
+          </div>
+          <div className="mt-3 grid gap-3">
             {store.sets.map((set) => (
-              <Link className="rounded-lg border border-zinc-200 bg-white p-3 transition hover:border-zinc-400 hover:shadow-sm dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-600" href={`/study/${set.id}`} key={set.id}>
-                <div className="font-medium">{set.title}</div>
-                <div className="text-sm text-zinc-500">{set.questions.length} câu hỏi</div>
-              </Link>
+              <div className="rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950" key={set.id}>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="font-medium">{set.title}</div>
+                    <div className="text-sm text-zinc-500">{set.questions.length} câu hỏi</div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Link className="btn-primary px-3 py-1.5 text-sm" href={`/study/${set.id}`}>
+                      Bắt đầu học
+                    </Link>
+                    <Link className="btn-secondary px-3 py-1.5 text-sm" href={`/exam/${set.id}`}>
+                      Thi thử
+                    </Link>
+                  </div>
+                </div>
+              </div>
             ))}
+            {!store.sets.length ? <div className="text-sm text-zinc-500">Chưa có bộ đề nào.</div> : null}
           </div>
         </div>
       </section>
