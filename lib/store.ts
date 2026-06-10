@@ -132,84 +132,10 @@ async function saveSetsToCloud(supabase: NonNullable<ReturnType<typeof createCli
   const syncableSets = sets.filter((set) => set.id !== sampleSetId && (!set.createdBy || set.createdBy === user.id));
   if (!syncableSets.length) return;
 
-  const setRows = syncableSets.map((set) => ({
-    id: set.id,
-    title: set.title,
-    visibility: set.visibility ?? "private",
-    created_by: set.createdBy ?? user.id,
-    created_by_email: set.createdByEmail ?? user.email ?? null,
-    created_at: set.createdAt,
-    updated_at: set.updatedAt
-  }));
-  const questions = syncableSets.flatMap((set) => set.questions);
-  const questionMap = new Map(questions.map((question) => [question.id, question]));
-  const uniqueQuestions = Array.from(questionMap.values());
-  const questionRows = uniqueQuestions.map((question) => ({
-    id: question.id,
-    question_text: question.questionText,
-    correct_option_id: question.correctOptionId,
-    correct_option_ids: question.correctOptionIds?.length ? question.correctOptionIds : [question.correctOptionId],
-    explanation: question.explanation ?? null,
-    updated_at: nowIso()
-  }));
-  const joinRows = syncableSets.flatMap((set) =>
-    set.questions.map((question, index) => ({
-      set_id: set.id,
-      question_id: question.id,
-      position: index
-    }))
-  );
-  const optionRows = uniqueQuestions.flatMap((question) =>
-    question.options.map((option, index) => ({
-      id: option.id,
-      question_id: question.id,
-      label: option.label,
-      text: option.text,
-      position: index
-    }))
-  );
-  const keywordRows = uniqueQuestions.flatMap((question) =>
-    question.keywords.map((keyword) => ({
-      id: keyword.id,
-      question_id: question.id,
-      text: keyword.text,
-      start_index: keyword.startIndex ?? null,
-      end_index: keyword.endIndex ?? null
-    }))
-  );
-  const questionIds = uniqueQuestions.map((question) => question.id);
-  const setIds = syncableSets.map((set) => set.id);
-
-  for (const rows of chunkRows(setRows)) {
-    throwIfSupabaseError(await supabase.from("quiz_sets").upsert(rows, { onConflict: "id" }), "Lưu bộ đề");
-  }
-  for (const rows of chunkRows(questionRows)) {
-    throwIfSupabaseError(await supabase.from("questions").upsert(rows, { onConflict: "id" }), "Lưu câu hỏi");
-  }
-
-  if (setIds.length) {
-    for (const ids of chunkRows(setIds)) {
-      throwIfSupabaseError(await supabase.from("quiz_set_questions").delete().in("set_id", ids), "Xóa liên kết bộ đề-câu hỏi cũ");
-    }
-  }
-  if (questionIds.length) {
-    for (const ids of chunkRows(questionIds)) {
-      throwIfSupabaseError(await supabase.from("options").delete().in("question_id", ids), "Xóa đáp án cũ");
-      throwIfSupabaseError(await supabase.from("keywords").delete().in("question_id", ids), "Xóa keyword cũ");
-    }
-  }
-
-  for (const rows of chunkRows(joinRows)) {
-    throwIfSupabaseError(await supabase.from("quiz_set_questions").insert(rows), "Lưu liên kết bộ đề-câu hỏi");
-  }
-  for (const rows of chunkRows(optionRows)) {
-    throwIfSupabaseError(await supabase.from("options").insert(rows), "Lưu đáp án");
-  }
-  for (const rows of chunkRows(keywordRows)) {
-    throwIfSupabaseError(await supabase.from("keywords").insert(rows), "Lưu keyword");
+  for (const set of syncableSets) {
+    throwIfSupabaseError(await supabase.rpc("save_quiz_set", { payload: set }), "Luu bo de");
   }
 }
-
 function persistSets(sets: QuizSet[]) {
   return sets;
 }
@@ -320,17 +246,28 @@ export function useQuizStore() {
     };
   }, [authReady, cloudConfig, cloudEnabled, loaded, userId, userEmail]);
 
-  const persistSetToCloud = useCallback(async (set: QuizSet) => {
-    if (!cloudEnabled || !userId) return;
+  const persistSetToCloud = useCallback(async (set: QuizSet, throwOnError = false) => {
+    if (!cloudEnabled) return;
     const supabase = createClient(cloudConfig);
     if (!supabase) return;
     try {
-      await saveSetsToCloud(supabase, [set], { id: userId, email: userEmail });
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData.user) {
+        throw new Error(authError?.message || "Bạn cần đăng nhập trước khi lưu bộ đề lên Supabase.");
+      }
+      const ownedSet = {
+        ...set,
+        createdBy: set.createdBy ?? authData.user.id,
+        createdByEmail: set.createdByEmail ?? authData.user.email ?? undefined
+      };
+      await saveSetsToCloud(supabase, [ownedSet], { id: authData.user.id, email: authData.user.email });
       setCloudError(null);
     } catch (error) {
-      setCloudError(error instanceof Error ? error.message : JSON.stringify(error));
+      const message = error instanceof Error ? error.message : JSON.stringify(error);
+      setCloudError(message);
+      if (throwOnError) throw new Error(message);
     }
-  }, [cloudConfig, cloudEnabled, userEmail, userId]);
+  }, [cloudConfig, cloudEnabled]);
 
   useEffect(() => {
     setProgressCloudReady(false);
@@ -422,21 +359,33 @@ export function useQuizStore() {
     });
   }, [persistSetToCloud]);
 
+  const buildNewSet = useCallback((title: string, questions: Question[] = []): QuizSet => ({
+    id: uid("set"),
+    title,
+    questions,
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+    createdBy: userId ?? undefined,
+    createdByEmail: userEmail ?? undefined,
+    visibility: "private"
+  }), [userEmail, userId]);
+
   const createSet = useCallback((title: string, questions: Question[] = []) => {
-    const set: QuizSet = {
-      id: uid("set"),
-      title,
-      questions,
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
-      createdBy: userId ?? undefined,
-      createdByEmail: userEmail ?? undefined,
-      visibility: "private"
-    };
+    const set = buildNewSet(title, questions);
     void persistSetToCloud(set);
     setSets((items) => persistSets([set, ...items.filter((item) => item.id !== sampleSetId)]));
     return set.id;
-  }, [persistSetToCloud, userEmail, userId]);
+  }, [buildNewSet, persistSetToCloud]);
+
+  const createSetAsync = useCallback(async (title: string, questions: Question[] = []) => {
+    if (cloudEnabled && !userId) {
+      throw new Error("Bạn cần đăng nhập trước khi lưu bộ đề lên Supabase.");
+    }
+    const set = buildNewSet(title, questions);
+    await persistSetToCloud(set, true);
+    setSets((items) => persistSets([set, ...items.filter((item) => item.id !== sampleSetId)]));
+    return set.id;
+  }, [buildNewSet, cloudEnabled, persistSetToCloud, userId]);
 
   const deleteSet = useCallback((setId: string) => {
     setSets((items) => persistSets(items.filter((item) => item.id !== setId)));
@@ -546,6 +495,7 @@ export function useQuizStore() {
     toggleDark,
     saveSet,
     createSet,
+    createSetAsync,
     deleteSet,
     renameSet,
     updateQuestion,

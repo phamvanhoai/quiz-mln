@@ -207,6 +207,155 @@ begin
 end;
 $$;
 
+create or replace function public.save_quiz_set(payload jsonb)
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  actor uuid := auth.uid();
+  actor_email text := auth.jwt()->>'email';
+  target_set_id text := payload->>'id';
+  question_item jsonb;
+  option_item jsonb;
+  keyword_item jsonb;
+  old_question_ids text[];
+  correct_ids text[];
+  question_position integer := 0;
+  option_position integer := 0;
+begin
+  if actor is null then
+    raise exception 'Not authenticated' using errcode = '42501';
+  end if;
+
+  if nullif(target_set_id, '') is null then
+    raise exception 'Missing quiz set id' using errcode = '22023';
+  end if;
+
+  if exists (select 1 from public.quiz_sets where id = target_set_id) and not public.can_manage_set(target_set_id) then
+    raise exception 'Not allowed to save quiz set %', target_set_id using errcode = '42501';
+  end if;
+
+  select coalesce(array_agg(question_id), array[]::text[])
+  into old_question_ids
+  from public.quiz_set_questions
+  where set_id = target_set_id;
+
+  delete from public.quiz_set_questions
+  where set_id = target_set_id;
+
+  delete from public.questions
+  where id = any(old_question_ids);
+
+  insert into public.quiz_sets (
+    id,
+    title,
+    visibility,
+    created_by,
+    created_by_email,
+    created_at,
+    updated_at
+  )
+  values (
+    target_set_id,
+    coalesce(nullif(payload->>'title', ''), 'Bộ đề mới'),
+    coalesce(nullif(payload->>'visibility', ''), 'private'),
+    actor,
+    coalesce(nullif(actor_email, ''), nullif(payload->>'createdByEmail', '')),
+    coalesce(nullif(payload->>'createdAt', '')::timestamptz, now()),
+    coalesce(nullif(payload->>'updatedAt', '')::timestamptz, now())
+  )
+  on conflict (id) do update set
+    title = excluded.title,
+    visibility = excluded.visibility,
+    updated_at = excluded.updated_at,
+    created_by = coalesce(public.quiz_sets.created_by, actor),
+    created_by_email = coalesce(public.quiz_sets.created_by_email, excluded.created_by_email);
+
+  for question_item in
+    select value from jsonb_array_elements(coalesce(payload->'questions', '[]'::jsonb))
+  loop
+    correct_ids := coalesce(
+      array(
+        select jsonb_array_elements_text(question_item->'correctOptionIds')
+      ),
+      array[question_item->>'correctOptionId']
+    );
+
+    insert into public.questions (
+      id,
+      question_text,
+      correct_option_id,
+      correct_option_ids,
+      explanation,
+      updated_at
+    )
+    values (
+      question_item->>'id',
+      coalesce(question_item->>'questionText', ''),
+      coalesce(nullif(question_item->>'correctOptionId', ''), correct_ids[1]),
+      correct_ids,
+      nullif(question_item->>'explanation', ''),
+      now()
+    )
+    on conflict (id) do update set
+      question_text = excluded.question_text,
+      correct_option_id = excluded.correct_option_id,
+      correct_option_ids = excluded.correct_option_ids,
+      explanation = excluded.explanation,
+      updated_at = excluded.updated_at;
+
+    insert into public.quiz_set_questions (set_id, question_id, position)
+    values (target_set_id, question_item->>'id', question_position)
+    on conflict (set_id, question_id) do update set position = excluded.position;
+
+    option_position := 0;
+    for option_item in
+      select value from jsonb_array_elements(coalesce(question_item->'options', '[]'::jsonb))
+    loop
+      insert into public.options (id, question_id, label, text, position)
+      values (
+        option_item->>'id',
+        question_item->>'id',
+        option_item->>'label',
+        coalesce(option_item->>'text', ''),
+        option_position
+      )
+      on conflict (id) do update set
+        question_id = excluded.question_id,
+        label = excluded.label,
+        text = excluded.text,
+        position = excluded.position;
+
+      option_position := option_position + 1;
+    end loop;
+
+    for keyword_item in
+      select value from jsonb_array_elements(coalesce(question_item->'keywords', '[]'::jsonb))
+    loop
+      insert into public.keywords (id, question_id, text, start_index, end_index)
+      values (
+        keyword_item->>'id',
+        question_item->>'id',
+        coalesce(keyword_item->>'text', ''),
+        nullif(keyword_item->>'startIndex', '')::integer,
+        nullif(keyword_item->>'endIndex', '')::integer
+      )
+      on conflict (id) do update set
+        question_id = excluded.question_id,
+        text = excluded.text,
+        start_index = excluded.start_index,
+        end_index = excluded.end_index;
+    end loop;
+
+    question_position := question_position + 1;
+  end loop;
+
+  return target_set_id;
+end;
+$$;
+
 create index if not exists quiz_set_questions_set_id_position_idx
 on public.quiz_set_questions(set_id, position);
 

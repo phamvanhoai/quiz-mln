@@ -155,6 +155,7 @@ export default function ImportPage() {
   const [notice, setNotice] = useState("");
   const [progress, setProgress] = useState<ImportProgress>({ active: false, current: 0, total: 0, found: 0, label: "" });
   const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   async function readFile(file: File) {
     setBusy(true);
@@ -230,6 +231,7 @@ export default function ImportPage() {
     const allQuestions = [...baseQuestions];
     const allErrors: string[] = [];
     const failed: FailedChunk[] = [];
+    let recoveredChunkCount = 0;
 
     setBusy(true);
     setErrors([]);
@@ -243,7 +245,9 @@ export default function ImportPage() {
           const result = await parseOneChunk(chunk.text, chunk.index, chunk.total, allQuestions.length);
           allQuestions.push(...result.questions);
           const details = { questionRange: chunk.questionRange, lineRange: chunk.lineRange, preview: chunk.preview };
-          allErrors.push(...result.errors.map((error) => `Phần ${chunk.index + 1}/${chunk.total} (${details.lineRange}, ${details.questionRange}): ${error}. Preview: ${details.preview}`));
+          const realErrors = result.errors.filter((error) => !/cứu được|parser thường/i.test(error));
+          recoveredChunkCount += result.errors.length - realErrors.length;
+          allErrors.push(...realErrors.map((error) => `Phần ${chunk.index + 1}/${chunk.total} (${details.lineRange}, ${details.questionRange}): ${error}. Preview: ${details.preview}`));
           const deduped = dedupeQuestions(allQuestions);
           setQuestions(deduped);
           setProgress({
@@ -258,10 +262,8 @@ export default function ImportPage() {
           const details = { questionRange: chunk.questionRange, lineRange: chunk.lineRange, preview: chunk.preview };
           const fallback = parseQuizTextWithErrors(chunk.text);
           if (fallback.questions.length) {
+            recoveredChunkCount += 1;
             allQuestions.push(...fallback.questions);
-            allErrors.push(
-              `Phần ${chunk.index + 1}/${chunk.total} (${details.lineRange}, ${details.questionRange}): AI lỗi nhưng parser thường đã cứu được ${fallback.questions.length} câu. Lỗi AI: ${reason}. Preview: ${details.preview}`
-            );
             const deduped = dedupeQuestions(allQuestions);
             setQuestions(deduped);
             setProgress({
@@ -286,6 +288,11 @@ export default function ImportPage() {
           ? `AI nhận ${deduped.length} câu, còn ${failed.length} phần lỗi cần retry trước khi lưu để tránh thiếu câu.`
           : `AI đã xử lý xong, nhận ${deduped.length} câu sau khi gộp trùng.`
       );
+      if (!failed.length && recoveredChunkCount) {
+        setNotice(
+          `AI đã xử lý xong, nhận ${deduped.length} câu sau khi gộp trùng. Có ${recoveredChunkCount} phần AI bị chậm/lỗi nhưng đã tự cứu bằng parser thường.`
+        );
+      }
       if (!deduped.length && !allErrors.length) {
         setErrors(["AI không tách được câu hỏi nào. Hãy kiểm tra text nguồn hoặc thử parse thường."]);
       }
@@ -317,14 +324,24 @@ export default function ImportPage() {
     await runAiImport(chunks, questions, true);
   }
 
-  function save() {
+  async function save() {
     if (store.cloudEnabled && !store.userId) {
       setErrors(["Bạn cần đăng nhập trước khi lưu bộ đề lên Supabase để hệ thống ghi nhận người tạo."]);
       return;
     }
     if (failedChunks.length && !window.confirm(`Còn ${failedChunks.length} phần import lỗi. Lưu bây giờ có thể thiếu câu. Bạn vẫn muốn lưu?`)) return;
-    const id = store.createSet(title.trim() || "Bộ đề mới", questions);
-    router.push(`/sets?set=${id}`);
+    setSaving(true);
+    setErrors([]);
+    setNotice("Đang lưu bộ đề lên Supabase...");
+    try {
+      const id = await store.createSetAsync(title.trim() || "Bộ đề mới", questions);
+      router.push(`/sets?set=${id}`);
+    } catch (error) {
+      setErrors([errorMessage(error) || "Không lưu được Supabase."]);
+      setNotice("");
+    } finally {
+      setSaving(false);
+    }
   }
 
   const progressPercent = progress.total ? Math.round((progress.current / progress.total) * 100) : 0;
@@ -357,8 +374,8 @@ export default function ImportPage() {
             <button className="btn-secondary" disabled={busy || !failedChunks.length} onClick={retryFailedChunks} type="button">
               Thử lại phần lỗi ({failedChunks.length})
             </button>
-            <button className="btn-secondary disabled:cursor-not-allowed disabled:opacity-60" disabled={!questions.length || busy || mustLoginToSave} onClick={save} type="button">
-              {mustLoginToSave ? "Đăng nhập để lưu" : "Lưu bộ đề"}
+            <button className="btn-secondary disabled:cursor-not-allowed disabled:opacity-60" disabled={!questions.length || busy || saving || mustLoginToSave} onClick={save} type="button">
+              {mustLoginToSave ? "Đăng nhập để lưu" : saving ? "Đang lưu..." : "Lưu bộ đề"}
             </button>
           </div>
           {mustLoginToSave ? (
