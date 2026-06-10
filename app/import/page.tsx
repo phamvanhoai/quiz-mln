@@ -34,6 +34,13 @@ type ImportProgress = {
   label: string;
 };
 
+type FailedChunk = {
+  index: number;
+  total: number;
+  text: string;
+  reason: string;
+};
+
 function questionKey(question: Question) {
   return [question.questionText, ...question.options.map((option) => `${option.label}:${option.text}`)]
     .join("|")
@@ -54,20 +61,23 @@ function dedupeQuestions(items: Question[]) {
   return result;
 }
 
-async function fetchAiChunk(payload: unknown, timeoutMs = 90000) {
+async function fetchAiChunk(payload: unknown, timeoutMs = 120000) {
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch("/api/ai-import", {
+    return await fetch("/api/ai-import", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
       signal: controller.signal
     });
-    return response;
   } finally {
     window.clearTimeout(timer);
   }
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Không rõ lỗi.";
 }
 
 export default function ImportPage() {
@@ -77,6 +87,7 @@ export default function ImportPage() {
   const [text, setText] = useState(sampleText);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
+  const [failedChunks, setFailedChunks] = useState<FailedChunk[]>([]);
   const [notice, setNotice] = useState("");
   const [progress, setProgress] = useState<ImportProgress>({ active: false, current: 0, total: 0, found: 0, label: "" });
   const [busy, setBusy] = useState(false);
@@ -85,6 +96,7 @@ export default function ImportPage() {
     setBusy(true);
     setNotice("");
     setErrors([]);
+    setFailedChunks([]);
     setProgress({ active: true, current: 0, total: 1, found: 0, label: "Đang đọc file..." });
     try {
       const lower = file.name.toLowerCase();
@@ -93,7 +105,7 @@ export default function ImportPage() {
       setTitle(file.name.replace(/\.(docx|pdf|txt)$/i, ""));
       setNotice(`Đã đọc file: ${content.length.toLocaleString("vi-VN")} ký tự.`);
     } catch (error) {
-      setErrors([error instanceof Error ? error.message : "Không đọc được file."]);
+      setErrors([errorMessage(error) || "Không đọc được file."]);
     } finally {
       setProgress({ active: false, current: 0, total: 0, found: 0, label: "" });
       setBusy(false);
@@ -102,6 +114,7 @@ export default function ImportPage() {
 
   function parse() {
     setNotice("");
+    setFailedChunks([]);
     setProgress({ active: true, current: 1, total: 1, found: 0, label: "Đang parse bằng quy tắc..." });
     const result = parseQuizTextWithErrors(text);
     setQuestions(result.questions);
@@ -110,88 +123,107 @@ export default function ImportPage() {
     setProgress({ active: false, current: 0, total: 0, found: 0, label: "" });
   }
 
-  async function parseWithAi() {
-    const chunks = splitImportText(text);
-    const allQuestions: Question[] = [];
+  async function parseOneChunk(chunkText: string, index: number, total: number, currentCount: number) {
+    let lastError = "";
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        setProgress({
+          active: true,
+          current: index + 1,
+          total,
+          found: currentCount,
+          label: attempt === 1 ? `AI đang xử lý phần ${index + 1}/${total}` : `Phần ${index + 1}/${total} lỗi/chậm, thử lại lần ${attempt}`
+        });
+        const response = await fetchAiChunk({
+          text: chunkText,
+          settings: readSettings(),
+          chunkIndex: index,
+          chunkCount: total
+        });
+        const data = (await response.json()) as AiImportResponse;
+        if (!response.ok) {
+          lastError = data.error ?? `AI import thất bại với HTTP ${response.status}.`;
+          continue;
+        }
+        return {
+          questions: data.questions ?? [],
+          errors: data.chunkErrors ?? []
+        };
+      } catch (error) {
+        lastError = errorMessage(error);
+      }
+    }
+    throw new Error(lastError || "AI xử lý phần này thất bại sau 3 lần thử.");
+  }
+
+  async function runAiImport(chunks: Array<{ text: string; index: number; total: number }>, baseQuestions: Question[], retryMode = false) {
+    const allQuestions = [...baseQuestions];
     const allErrors: string[] = [];
+    const failed: FailedChunk[] = [];
 
     setBusy(true);
     setErrors([]);
-    setQuestions([]);
     setNotice("");
-    setProgress({ active: true, current: 0, total: chunks.length, found: 0, label: "Chuẩn bị AI import..." });
+    setProgress({ active: true, current: 0, total: chunks.length, found: allQuestions.length, label: retryMode ? "Chuẩn bị retry phần lỗi..." : "Chuẩn bị AI import..." });
 
     try {
-      for (let index = 0; index < chunks.length; index += 1) {
-        setProgress({
-          active: true,
-          current: index + 1,
-          total: chunks.length,
-          found: allQuestions.length,
-          label: `AI đang xử lý phần ${index + 1}/${chunks.length}`
-        });
-
-        let response: Response | null = null;
-        let data: AiImportResponse | null = null;
-        for (let attempt = 1; attempt <= 2; attempt += 1) {
-          try {
-            if (attempt > 1) {
-              setProgress({
-                active: true,
-                current: index + 1,
-                total: chunks.length,
-                found: allQuestions.length,
-                label: `Phần ${index + 1}/${chunks.length} quá lâu, đang thử lại lần ${attempt}`
-              });
-            }
-            response = await fetchAiChunk({
-              text: chunks[index],
-              settings: readSettings(),
-              chunkIndex: index,
-              chunkCount: chunks.length
-            });
-            data = (await response.json()) as AiImportResponse;
-            break;
-          } catch (error) {
-            if (attempt === 2) {
-              allErrors.push(
-                `Phần ${index + 1}/${chunks.length}: quá thời gian chờ AI, đã bỏ qua để tiếp tục các phần còn lại.`
-              );
-            }
-          }
+      for (let order = 0; order < chunks.length; order += 1) {
+        const chunk = chunks[order];
+        try {
+          const result = await parseOneChunk(chunk.text, chunk.index, chunk.total, allQuestions.length);
+          allQuestions.push(...result.questions);
+          allErrors.push(...result.errors.map((error) => `Phần ${chunk.index + 1}/${chunk.total}: ${error}`));
+          const deduped = dedupeQuestions(allQuestions);
+          setQuestions(deduped);
+          setProgress({
+            active: true,
+            current: order + 1,
+            total: chunks.length,
+            found: deduped.length,
+            label: `Đã xử lý ${order + 1}/${chunks.length} phần`
+          });
+        } catch (error) {
+          const reason = errorMessage(error);
+          failed.push({ index: chunk.index, total: chunk.total, text: chunk.text, reason });
+          allErrors.push(`Phần ${chunk.index + 1}/${chunk.total}: ${reason}. Phần này được giữ lại để retry, chưa bị mất.`);
         }
-
-        if (!response || !data) continue;
-        if (!response.ok) {
-          allErrors.push(data.error ?? `Phần ${index + 1}/${chunks.length}: AI import thất bại.`);
-          continue;
-        }
-        allQuestions.push(...(data.questions ?? []));
-        allErrors.push(...(data.chunkErrors ?? []));
-        const deduped = dedupeQuestions(allQuestions);
-        setQuestions(deduped);
-        setProgress({
-          active: true,
-          current: index + 1,
-          total: chunks.length,
-          found: deduped.length,
-          label: `Đã xử lý ${index + 1}/${chunks.length} phần`
-        });
       }
 
       const deduped = dedupeQuestions(allQuestions);
       setQuestions(deduped);
       setErrors(allErrors);
-      setNotice(`AI đã xử lý ${chunks.length} phần, nhận ${allQuestions.length} câu thô, còn ${deduped.length} câu sau khi gộp trùng.`);
+      setFailedChunks(failed);
+      setNotice(
+        failed.length
+          ? `AI nhận ${deduped.length} câu, còn ${failed.length} phần lỗi cần retry trước khi lưu để tránh thiếu câu.`
+          : `AI đã xử lý xong, nhận ${deduped.length} câu sau khi gộp trùng.`
+      );
       if (!deduped.length && !allErrors.length) {
         setErrors(["AI không tách được câu hỏi nào. Hãy kiểm tra text nguồn hoặc thử parse thường."]);
       }
     } catch (error) {
-      setErrors([error instanceof Error ? error.message : "Không gọi được AI import."]);
+      setErrors([errorMessage(error) || "Không gọi được AI import."]);
     } finally {
       setBusy(false);
       setProgress((current) => ({ ...current, active: false, label: "" }));
     }
+  }
+
+  async function parseWithAi() {
+    const chunks = splitImportText(text).map((chunkText, index, items) => ({
+      text: chunkText,
+      index,
+      total: items.length
+    }));
+    setQuestions([]);
+    setFailedChunks([]);
+    await runAiImport(chunks, []);
+  }
+
+  async function retryFailedChunks() {
+    const chunks = failedChunks.map((chunk) => ({ text: chunk.text, index: chunk.index, total: chunk.total }));
+    setFailedChunks([]);
+    await runAiImport(chunks, questions, true);
   }
 
   function save() {
@@ -199,6 +231,7 @@ export default function ImportPage() {
       setErrors(["Bạn cần đăng nhập trước khi lưu bộ đề lên Supabase để hệ thống ghi nhận người tạo."]);
       return;
     }
+    if (failedChunks.length && !window.confirm(`Còn ${failedChunks.length} phần import lỗi. Lưu bây giờ có thể thiếu câu. Bạn vẫn muốn lưu?`)) return;
     const id = store.createSet(title.trim() || "Bộ đề mới", questions);
     router.push(`/sets?set=${id}`);
   }
@@ -230,6 +263,9 @@ export default function ImportPage() {
             <button className="btn-secondary" disabled={busy || !text.trim()} onClick={parseWithAi} type="button">
               Parse bằng AI
             </button>
+            <button className="btn-secondary" disabled={busy || !failedChunks.length} onClick={retryFailedChunks} type="button">
+              Thử lại phần lỗi ({failedChunks.length})
+            </button>
             <button className="btn-secondary disabled:cursor-not-allowed disabled:opacity-60" disabled={!questions.length || busy || mustLoginToSave} onClick={save} type="button">
               {mustLoginToSave ? "Đăng nhập để lưu" : "Lưu bộ đề"}
             </button>
@@ -252,6 +288,11 @@ export default function ImportPage() {
             </div>
           ) : null}
           {notice ? <div className="mt-4 rounded-md bg-zinc-100 p-3 text-sm text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">{notice}</div> : null}
+          {failedChunks.length ? (
+            <div className="mt-4 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-100">
+              Còn {failedChunks.length} phần lỗi. Nên bấm “Thử lại phần lỗi” trước khi lưu.
+            </div>
+          ) : null}
           {errors.length ? (
             <div className="mt-4 max-h-52 overflow-auto rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">
               {errors.map((error) => (
