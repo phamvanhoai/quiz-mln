@@ -24,12 +24,41 @@ const labels: OptionLabel[] = ["A", "B", "C", "D"];
 
 function extractJson(text: string) {
   const trimmed = text.trim();
-  if (trimmed.startsWith("```")) {
-    return trimmed.replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
+  const withoutFence = trimmed.startsWith("```")
+    ? trimmed.replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim()
+    : trimmed;
+  const first = withoutFence.search(/[\[{]/);
+  if (first < 0) return withoutFence;
+
+  const stack: string[] = [];
+  let inString = false;
+  let escaped = false;
+
+  for (let index = first; index < withoutFence.length; index += 1) {
+    const char = withoutFence[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === "\"") inString = false;
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = true;
+      continue;
+    }
+    if (char === "{" || char === "[") {
+      stack.push(char);
+      continue;
+    }
+    if (char === "}" || char === "]") {
+      const open = stack.pop();
+      if ((char === "}" && open !== "{") || (char === "]" && open !== "[")) break;
+      if (!stack.length) return withoutFence.slice(first, index + 1);
+    }
   }
-  const first = trimmed.indexOf("{");
-  const last = trimmed.lastIndexOf("}");
-  return first >= 0 && last > first ? trimmed.slice(first, last + 1) : trimmed;
+
+  return withoutFence.slice(first);
 }
 
 function normalizeQuestions(items: AiQuestion[]): Question[] {
@@ -72,10 +101,7 @@ function dedupeQuestions(questions: Question[]) {
   const result: Question[] = [];
 
   for (const question of questions) {
-    const key = [
-      question.questionText,
-      ...question.options.map((option) => `${option.label}:${option.text}`)
-    ]
+    const key = [question.questionText, ...question.options.map((option) => `${option.label}:${option.text}`)]
       .join("|")
       .toLowerCase()
       .replace(/\s+/g, " ")
@@ -101,7 +127,7 @@ Yêu cầu:
 - Giữ nguyên tiếng Việt.
 - Keywords để [] nếu không chắc.
 - Không bịa câu hỏi, không bịa đáp án đúng.
-- Trả về JSON hợp lệ duy nhất, không markdown.
+- Chỉ trả về đúng MỘT JSON object hợp lệ theo schema. Không markdown, không giải thích, không thêm object thứ hai phía sau.
 
 Schema JSON:
 {
@@ -125,22 +151,19 @@ async function callGemini(apiKey: string, model: string, prompt: string) {
   const timer = setTimeout(() => controller.abort(), 85000);
   let response: Response;
   try {
-    response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0,
-            responseMimeType: "application/json",
-            maxOutputTokens: 65536
-          }
-        })
-      }
-    );
+    response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0,
+          responseMimeType: "application/json",
+          maxOutputTokens: 65536
+        }
+      })
+    });
   } finally {
     clearTimeout(timer);
   }
@@ -151,7 +174,12 @@ async function callGemini(apiKey: string, model: string, prompt: string) {
   }
 
   const raw = data.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
-  const parsed = JSON.parse(extractJson(raw)) as { questions?: AiQuestion[] };
+  let parsed: { questions?: AiQuestion[] };
+  try {
+    parsed = JSON.parse(extractJson(raw)) as { questions?: AiQuestion[] };
+  } catch (error) {
+    throw new Error(`Không parse được JSON AI trả về: ${error instanceof Error ? error.message : "JSON lỗi."}`);
+  }
   return normalizeQuestions(parsed.questions ?? []);
 }
 
