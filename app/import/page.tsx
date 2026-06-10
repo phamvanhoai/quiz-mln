@@ -89,6 +89,9 @@ async function fetchAiChunk(payload: unknown, timeoutMs = 120000) {
 }
 
 function errorMessage(error: unknown) {
+  if (error instanceof Error && error.name === "AbortError") {
+    return "AI quá thời gian chờ.";
+  }
   return error instanceof Error ? error.message : "Không rõ lỗi.";
 }
 
@@ -253,7 +256,24 @@ export default function ImportPage() {
         } catch (error) {
           const reason = errorMessage(error);
           const details = { questionRange: chunk.questionRange, lineRange: chunk.lineRange, preview: chunk.preview };
-          failed.push({ index: chunk.index, total: chunk.total, text: chunk.text, reason, ...details });
+          const fallback = parseQuizTextWithErrors(chunk.text);
+          if (fallback.questions.length) {
+            allQuestions.push(...fallback.questions);
+            allErrors.push(
+              `Phần ${chunk.index + 1}/${chunk.total} (${details.lineRange}, ${details.questionRange}): AI lỗi nhưng parser thường đã cứu được ${fallback.questions.length} câu. Lỗi AI: ${reason}. Preview: ${details.preview}`
+            );
+            const deduped = dedupeQuestions(allQuestions);
+            setQuestions(deduped);
+            setProgress({
+              active: true,
+              current: order + 1,
+              total: chunks.length,
+              found: deduped.length,
+              label: `Đã xử lý ${order + 1}/${chunks.length} phần`
+            });
+          } else {
+            failed.push({ index: chunk.index, total: chunk.total, text: chunk.text, reason, ...details });
+          }
         }
       }
 
