@@ -1,4 +1,4 @@
-export const importChunkSize = 9000;
+export const importChunkSize = 6000;
 
 export function splitImportText(text: string, chunkSize = importChunkSize) {
   return splitImportTextWithMeta(text, chunkSize).map((chunk) => chunk.text);

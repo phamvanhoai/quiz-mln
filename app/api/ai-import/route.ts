@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { parseQuizTextWithErrors } from "@/lib/parser";
 import type { AppSettings } from "@/lib/settings";
 import { splitImportText } from "@/lib/text-chunks";
 import type { OptionLabel, Question } from "@/lib/types";
@@ -131,6 +132,10 @@ function dedupeQuestions(questions: Question[]) {
   return result;
 }
 
+function parseWithRuleFallback(text: string) {
+  return parseQuizTextWithErrors(text).questions;
+}
+
 function buildPrompt(text: string, index: number, total: number) {
   return `Bạn là parser dữ liệu quiz trắc nghiệm tiếng Việt.
 Đây là phần ${index}/${total} của một tài liệu lớn. Hãy trích xuất TẤT CẢ câu hỏi trắc nghiệm có trong phần này, không chỉ lấy ví dụ hoặc 10 câu đầu.
@@ -164,7 +169,7 @@ ${text}`;
 
 async function callGemini(apiKey: string, model: string, prompt: string) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 85000);
+  const timer = setTimeout(() => controller.abort(), 110000);
   let response: Response;
   try {
     response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
@@ -231,6 +236,20 @@ export async function POST(request: Request) {
         chunkErrors: []
       });
     } catch (error) {
+      const fallbackQuestions = parseWithRuleFallback(text);
+      if (fallbackQuestions.length) {
+        return NextResponse.json({
+          questions: fallbackQuestions,
+          rawCount: fallbackQuestions.length,
+          chunkCount: body.chunkCount,
+          chunkIndex: body.chunkIndex,
+          chunkErrors: [
+            `Phần ${body.chunkIndex + 1}/${body.chunkCount}: AI lỗi nhưng đã cứu được ${fallbackQuestions.length} câu bằng parser thường. Lỗi AI: ${
+              error instanceof Error ? error.message : "AI import lỗi."
+            }`
+          ]
+        });
+      }
       return NextResponse.json(
         {
           questions: [],
