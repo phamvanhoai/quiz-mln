@@ -7,7 +7,7 @@ import { QuestionEditor } from "@/components/QuestionEditor";
 import { readDocxText, readPdfText } from "@/lib/file-readers";
 import { parseQuizTextWithErrors } from "@/lib/parser";
 import { readSettings } from "@/lib/settings";
-import { splitImportText } from "@/lib/text-chunks";
+import { splitImportTextWithMeta } from "@/lib/text-chunks";
 import { useQuizStore } from "@/lib/store";
 import type { Question } from "@/lib/types";
 
@@ -39,6 +39,18 @@ type FailedChunk = {
   total: number;
   text: string;
   reason: string;
+  questionRange: string;
+  lineRange: string;
+  preview: string;
+};
+
+type ImportChunk = {
+  text: string;
+  index: number;
+  total: number;
+  questionRange: string;
+  lineRange: string;
+  preview: string;
 };
 
 function questionKey(question: Question) {
@@ -78,6 +90,55 @@ async function fetchAiChunk(payload: unknown, timeoutMs = 120000) {
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Không rõ lỗi.";
+}
+
+function describeChunk(chunkText: string) {
+  const numbers = Array.from(chunkText.matchAll(/(?:^|\n)\s*(\d+)[\.\)]\s+/g))
+    .map((match) => Number(match[1]))
+    .filter(Number.isFinite);
+  const first = numbers[0];
+  const last = numbers[numbers.length - 1];
+  const questionRange = first && last ? (first === last ? `câu ${first}` : `khoảng câu ${first}-${last}`) : "không xác định được số câu";
+  const preview = chunkText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 8)
+    .join(" ")
+    .slice(0, 320);
+  return { questionRange, preview };
+}
+
+function buildImportChunks(sourceText: string): ImportChunk[] {
+  const rawChunks = splitImportTextWithMeta(sourceText);
+  const parsedCounts = rawChunks.map((chunk) => parseQuizTextWithErrors(chunk.text).questions.length);
+  let cursor = 1;
+  return rawChunks.map((chunk, index) => {
+    const numbered = describeChunk(chunk.text);
+    const count = parsedCounts[index];
+    let questionRange = numbered.questionRange;
+    if (questionRange === "không xác định được số câu" && count > 0) {
+      const start = cursor;
+      const end = cursor + count - 1;
+      questionRange = start === end ? `ước lượng câu ${start}` : `ước lượng câu ${start}-${end}`;
+    }
+    cursor += Math.max(count, 0);
+    return {
+      text: chunk.text,
+      index,
+      total: rawChunks.length,
+      questionRange,
+      lineRange: `dòng ${chunk.startLine}-${chunk.endLine}`,
+      preview: numbered.preview
+    };
+  });
+}
+
+function cleanChunkError(message: string, index: number, total: number) {
+  return message
+    .replace(new RegExp(`^\\s*Phần\\s+${index + 1}\\/${total}\\s*:\\s*`, "i"), "")
+    .replace(new RegExp(`^\\s*Phần\\s+${index + 1}\\/${total}\\s*:\\s*`, "i"), "")
+    .trim();
 }
 
 export default function ImportPage() {
@@ -145,9 +206,15 @@ export default function ImportPage() {
           lastError = data.error ?? `AI import thất bại với HTTP ${response.status}.`;
           continue;
         }
+        const chunkErrors = data.chunkErrors ?? [];
+        const chunkQuestions = data.questions ?? [];
+        if (!chunkQuestions.length && chunkErrors.length) {
+          lastError = chunkErrors.map((error) => cleanChunkError(error, index, total)).join("; ");
+          continue;
+        }
         return {
-          questions: data.questions ?? [],
-          errors: data.chunkErrors ?? []
+          questions: chunkQuestions,
+          errors: chunkErrors.map((error) => cleanChunkError(error, index, total))
         };
       } catch (error) {
         lastError = errorMessage(error);
@@ -156,7 +223,7 @@ export default function ImportPage() {
     throw new Error(lastError || "AI xử lý phần này thất bại sau 3 lần thử.");
   }
 
-  async function runAiImport(chunks: Array<{ text: string; index: number; total: number }>, baseQuestions: Question[], retryMode = false) {
+  async function runAiImport(chunks: ImportChunk[], baseQuestions: Question[], retryMode = false) {
     const allQuestions = [...baseQuestions];
     const allErrors: string[] = [];
     const failed: FailedChunk[] = [];
@@ -172,7 +239,8 @@ export default function ImportPage() {
         try {
           const result = await parseOneChunk(chunk.text, chunk.index, chunk.total, allQuestions.length);
           allQuestions.push(...result.questions);
-          allErrors.push(...result.errors.map((error) => `Phần ${chunk.index + 1}/${chunk.total}: ${error}`));
+          const details = { questionRange: chunk.questionRange, lineRange: chunk.lineRange, preview: chunk.preview };
+          allErrors.push(...result.errors.map((error) => `Phần ${chunk.index + 1}/${chunk.total} (${details.lineRange}, ${details.questionRange}): ${error}. Preview: ${details.preview}`));
           const deduped = dedupeQuestions(allQuestions);
           setQuestions(deduped);
           setProgress({
@@ -184,8 +252,8 @@ export default function ImportPage() {
           });
         } catch (error) {
           const reason = errorMessage(error);
-          failed.push({ index: chunk.index, total: chunk.total, text: chunk.text, reason });
-          allErrors.push(`Phần ${chunk.index + 1}/${chunk.total}: ${reason}. Phần này được giữ lại để retry, chưa bị mất.`);
+          const details = { questionRange: chunk.questionRange, lineRange: chunk.lineRange, preview: chunk.preview };
+          failed.push({ index: chunk.index, total: chunk.total, text: chunk.text, reason, ...details });
         }
       }
 
@@ -210,18 +278,21 @@ export default function ImportPage() {
   }
 
   async function parseWithAi() {
-    const chunks = splitImportText(text).map((chunkText, index, items) => ({
-      text: chunkText,
-      index,
-      total: items.length
-    }));
+    const chunks = buildImportChunks(text);
     setQuestions([]);
     setFailedChunks([]);
     await runAiImport(chunks, []);
   }
 
   async function retryFailedChunks() {
-    const chunks = failedChunks.map((chunk) => ({ text: chunk.text, index: chunk.index, total: chunk.total }));
+    const chunks = failedChunks.map((chunk) => ({
+      text: chunk.text,
+      index: chunk.index,
+      total: chunk.total,
+      questionRange: chunk.questionRange,
+      lineRange: chunk.lineRange,
+      preview: chunk.preview
+    }));
     setFailedChunks([]);
     await runAiImport(chunks, questions, true);
   }
@@ -290,7 +361,19 @@ export default function ImportPage() {
           {notice ? <div className="mt-4 rounded-md bg-zinc-100 p-3 text-sm text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">{notice}</div> : null}
           {failedChunks.length ? (
             <div className="mt-4 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-100">
-              Còn {failedChunks.length} phần lỗi. Nên bấm “Thử lại phần lỗi” trước khi lưu.
+              <div className="font-semibold">Còn {failedChunks.length} phần lỗi. Nên bấm “Thử lại phần lỗi” trước khi lưu.</div>
+              <div className="mt-2 grid gap-2">
+                {failedChunks.map((chunk) => (
+                  <div className="rounded border border-red-200 bg-white/70 p-2 dark:border-red-900 dark:bg-black/20" key={`${chunk.index}-${chunk.reason}`}>
+                    <div className="font-medium">
+                      Phần {chunk.index + 1}/{chunk.total} · {chunk.questionRange}
+                    </div>
+                    <div className="mt-1 text-xs opacity-80">{chunk.lineRange}</div>
+                    <div className="mt-1 text-xs opacity-80">{chunk.reason}</div>
+                    <div className="mt-1 text-xs opacity-80">Preview: {chunk.preview}</div>
+                  </div>
+                ))}
+              </div>
             </div>
           ) : null}
           {errors.length ? (
