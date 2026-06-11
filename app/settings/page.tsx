@@ -1,13 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { AppShell, PageTitle } from "@/components/AppShell";
 import { googleAiModels } from "@/lib/google-models";
 import { defaultSettings, useAppSettings } from "@/lib/settings";
 import { useQuizStore } from "@/lib/store";
+import { useAdminStatus } from "@/lib/auth";
 
 export default function SettingsPage() {
   const store = useQuizStore();
+  const { user, loaded: adminLoaded, isAdmin } = useAdminStatus();
   const { loaded, settings, save } = useAppSettings();
   const [draft, setDraft] = useState(settings);
   const [message, setMessage] = useState("");
@@ -31,6 +34,28 @@ export default function SettingsPage() {
     setDraft(empty);
     save(empty);
     setMessage("Đã xóa cấu hình local.");
+  }
+
+  if (!adminLoaded) {
+    return <AppShell dark={store.dark} onToggleDark={store.toggleDark}>{null}</AppShell>;
+  }
+
+  if (!user) {
+    return (
+      <AppShell dark={store.dark} onToggleDark={store.toggleDark}>
+        <section className="panel max-w-2xl p-5">
+          Can <Link className="font-medium text-blue-600 dark:text-blue-400" href="/login">dang nhap</Link> bang tai khoan admin de vao cau hinh.
+        </section>
+      </AppShell>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <AppShell dark={store.dark} onToggleDark={store.toggleDark}>
+        <section className="panel max-w-2xl p-5">Tai khoan nay khong co quyen admin nen khong duoc vao trang cau hinh.</section>
+      </AppShell>
+    );
   }
 
   return (

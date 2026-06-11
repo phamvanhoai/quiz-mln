@@ -2,9 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ReactNode, useEffect, useMemo, useState } from "react";
-import { getConfiguredSupabaseClient, useAuthUser } from "@/lib/auth";
-import { readSettings } from "@/lib/settings";
+import { ReactNode } from "react";
+import { getConfiguredSupabaseClient, useAdminStatus } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
 const nav = [
@@ -12,46 +11,18 @@ const nav = [
   { href: "/import", label: "Import" },
   { href: "/sets", label: "Bộ đề" },
   { href: "/wrong", label: "Câu sai" },
-  { href: "/login", label: "Tài khoản" },
-  { href: "/settings", label: "Cấu hình" }
+  { href: "/login", label: "Tài khoản" }
 ];
-
-function getAdminEmails() {
-  const fromSettings = readSettings().adminEmails;
-  const fromEnv = process.env.NEXT_PUBLIC_ADMIN_EMAILS ?? "";
-  return `${fromSettings},${fromEnv}`
-    .split(",")
-    .map((email) => email.trim().toLowerCase())
-    .filter(Boolean);
-}
 
 export function AppShell({ children, dark, onToggleDark }: { children: ReactNode; dark: boolean; onToggleDark: () => void }) {
   const pathname = usePathname();
-  const { user } = useAuthUser();
-  const [isAdminFromTable, setIsAdminFromTable] = useState(false);
-  const adminEmails = useMemo(getAdminEmails, []);
-  const isBootstrapAdmin = Boolean(user?.email && adminEmails.includes(user.email.toLowerCase()));
-  const showAdmin = isBootstrapAdmin || isAdminFromTable;
+  const { user, isAdmin } = useAdminStatus();
 
   const isActive = (href: string) => {
     if (href === "/sets") return pathname === "/sets" || pathname.startsWith("/study") || pathname.startsWith("/exam");
     return pathname === href;
   };
 
-  useEffect(() => {
-    let cancelled = false;
-    async function checkAdmin() {
-      setIsAdminFromTable(false);
-      const supabase = getConfiguredSupabaseClient();
-      if (!supabase || !user) return;
-      const { data } = await supabase.from("admin_users").select("user_id").eq("user_id", user.id).maybeSingle();
-      if (!cancelled) setIsAdminFromTable(Boolean(data));
-    }
-    checkAdmin();
-    return () => {
-      cancelled = true;
-    };
-  }, [user]);
 
   return (
     <div className="min-h-screen lg:flex">
@@ -77,7 +48,7 @@ export function AppShell({ children, dark, onToggleDark }: { children: ReactNode
           </button>
         </div>
         <nav className="mx-auto flex max-w-6xl gap-2 overflow-x-auto px-4 pb-4 lg:block lg:px-6">
-          {[...nav, ...(showAdmin ? [{ href: "/admin", label: "Admin" }] : [])].map((item) => {
+          {[...nav, ...(isAdmin ? [{ href: "/settings", label: "Cau hinh" }, { href: "/admin", label: "Admin" }] : [])].map((item) => {
             const active = item.href === "/admin" ? pathname.startsWith("/admin") : isActive(item.href);
             return (
               <Link
